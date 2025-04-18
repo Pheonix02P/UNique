@@ -95,7 +95,7 @@ def extract_images_from_pdf_bytes(pdf_bytes):
                 img = Image.open(io.BytesIO(img_data))
                 
                 # Optimize image size for API
-                max_dim = 1200
+                max_dim = 1600
                 if img.width > max_dim or img.height > max_dim:
                     ratio = min(max_dim/img.width, max_dim/img.height)
                     new_size = (int(img.width * ratio), int(img.height * ratio))
