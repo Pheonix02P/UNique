@@ -60,7 +60,7 @@ def process_image(image_file):
     try:
         image = Image.open(image_file)
         # Resize large images to optimize processing speed
-        max_size = 1200
+        max_size = 2000
         if image.width > max_size or image.height > max_size:
             ratio = min(max_size/image.width, max_size/image.height)
             new_size = (int(image.width * ratio), int(image.height * ratio))
@@ -95,7 +95,7 @@ def extract_images_from_pdf_bytes(pdf_bytes):
                 img = Image.open(io.BytesIO(img_data))
                 
                 # Optimize image size for API
-                max_dim = 1600
+                max_dim = 2400
                 if img.width > max_dim or img.height > max_dim:
                     ratio = min(max_dim/img.width, max_dim/img.height)
                     new_size = (int(img.width * ratio), int(img.height * ratio))
