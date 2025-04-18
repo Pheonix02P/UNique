@@ -172,14 +172,14 @@ if uploaded_file is not None:
             images = cached_image_extraction(pdf_bytes)
             
             if images:
-                st.image(images[0], caption="First page preview", use_column_width=True)
+                st.image(images[0], caption="First page preview", use_container_width=True)
                 st.caption(f"PDF with {len(images)} total pages")
             else:
                 st.error("Could not extract images from PDF")
         else:  # Image file
             image = process_image(uploaded_file)
             if image:
-                st.image(image, caption="Uploaded Image", use_column_width=True)
+                st.image(image, caption="Uploaded Image", use_container_width=True)
                 images = [image]
             else:
                 images = []
