@@ -7,14 +7,31 @@ import io
 import google.generativeai as genai
 import time
 import concurrent.futures
+import gc
 
 # Add cache clearing function to prevent memory buildup
 def clear_cached_data():
     """Clear all cached data to prevent memory issues"""
     st.cache_data.clear()
 
-# Call cache clearing when the app starts - automatic with no user prompt
-clear_cached_data()
+# Create a session state key to track processing state
+if 'processing_state' not in st.session_state:
+    st.session_state.processing_state = 'ready'
+
+# More thorough cache and resource clearing function
+def reset_app_state():
+    """Thoroughly reset the app state between uploads"""
+    # Clear all Streamlit cache
+    st.cache_data.clear()
+    
+    # Reset processing state
+    st.session_state.processing_state = 'ready'
+    
+    # Force garbage collection to release memory
+    gc.collect()
+    
+    # Clean temp files
+    cleanup_temp_files()
 
 # Automatically clean up temp files without notification
 def cleanup_temp_files():
@@ -103,21 +120,9 @@ available in the brochure.
 # Main content area
 st.write("Upload Brochure.")
 
-# Store the last uploaded file ID in session state to detect new uploads
-if 'last_file_id' not in st.session_state:
-    st.session_state.last_file_id = None
-
-# File uploader with cache clearing on new file selection
-uploaded_file = st.file_uploader("Choose a brochure file", type=["pdf", "jpg", "jpeg", "png"])
-
-# Check if a new file was uploaded and clear cache if so
-if uploaded_file is not None:
-    current_file_id = id(uploaded_file)
-    if st.session_state.last_file_id != current_file_id:
-        # Clear cache when a new file is selected
-        clear_cached_data()
-        cleanup_temp_files()
-        st.session_state.last_file_id = current_file_id
+# File uploader with automatic reset on new file selection
+uploaded_file = st.file_uploader("Choose a brochure file", type=["pdf", "jpg", "jpeg", "png"], 
+                                on_change=reset_app_state)
 
 def setup_gemini_api():
     try:
@@ -129,7 +134,8 @@ def setup_gemini_api():
 
 def process_image(image_file):
     try:
-        # Convert to bytes first for caching
+        # Reset file pointer and convert to bytes first for caching
+        image_file.seek(0)
         img_bytes = image_file.read()
         return cached_image_enhancement(img_bytes)
     except Exception as e:
@@ -146,8 +152,6 @@ def enhance_image_for_text_recognition(image):
         enhancer = ImageEnhance.Contrast(enhanced)
         enhanced = enhancer.enhance(1.2)
         
-        # Skip brightness adjustment if not necessary
-        
         # Apply lighter sharpening for faster processing
         enhanced = enhanced.filter(ImageFilter.UnsharpMask(radius=1.2, percent=120, threshold=3))
         
@@ -157,9 +161,10 @@ def enhance_image_for_text_recognition(image):
         return image
 
 def extract_images_from_pdf_bytes(pdf_bytes):
-    """Extract all images from PDF with parallel processing for speed"""
+    """Extract all images from PDF with improved resource handling"""
     images = []
     temp_file = None
+    doc = None
     
     try:
         # Create a temporary file for the PDF
@@ -171,61 +176,56 @@ def extract_images_from_pdf_bytes(pdf_bytes):
         doc = fitz.open(temp_file.name)
         total_pages = len(doc)
         
-        # Process all pages with optimized parameters
+        # Process pages in controlled batches to manage memory
         with st.spinner(f"Extracting all {total_pages} pages..."):
-            def process_page(page_num):
-                page = doc.load_page(page_num)
+            # Process in smaller batches with memory cleanup between batches
+            batch_size = 5  # Process 5 pages at a time
+            for batch_start in range(0, total_pages, batch_size):
+                batch_end = min(batch_start + batch_size, total_pages)
                 
-                # Reduced resolution for faster processing while maintaining quality
-                pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))
-                img_data = pix.tobytes("ppm")
+                # Process this batch
+                for page_num in range(batch_start, batch_end):
+                    try:
+                        page = doc.load_page(page_num)
+                        pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+                        img_data = pix.tobytes("ppm")
+                        
+                        # Convert to PIL Image
+                        img = Image.open(io.BytesIO(img_data))
+                        
+                        # Apply enhancement right away to avoid storing original
+                        enhanced = enhance_image_for_text_recognition(img)
+                        images.append((page_num, enhanced))
+                        
+                        # Explicitly delete variables to help garbage collection
+                        del pix, img_data, img
+                    except Exception as e:
+                        st.warning(f"Error processing page {page_num}: {str(e)}")
                 
-                # Convert to bytes for caching enhancement
-                img_bytes = io.BytesIO()
-                img = Image.open(io.BytesIO(img_data))
-                img.save(img_bytes, format="PNG")
-                img_bytes.seek(0)
-                
-                # Use cached enhancement
-                return cached_image_enhancement(img_bytes.getvalue(), max_size=2200)
-            
-            # Use parallel processing for faster image extraction
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                # Process pages concurrently (limit concurrency to avoid memory issues)
-                max_workers = min(8, os.cpu_count() or 4)
-                chunk_size = max(1, total_pages // max_workers)
-                
-                # Process in smaller batches to prevent memory overload
-                all_pages = list(range(total_pages))
-                for i in range(0, total_pages, chunk_size):
-                    chunk = all_pages[i:i+chunk_size]
-                    futures = {executor.submit(process_page, page_num): page_num for page_num in chunk}
-                    
-                    for future in concurrent.futures.as_completed(futures):
-                        page_num = futures[future]
-                        try:
-                            img = future.result()
-                            if img:
-                                images.append((page_num, img))
-                        except Exception as e:
-                            st.warning(f"Error processing page {page_num}: {str(e)}")
+                # Force garbage collection after each batch
+                gc.collect()
             
             # Sort images by page number
             images.sort(key=lambda x: x[0])
             images = [img for _, img in images]
         
-        # Close the document explicitly
-        doc.close()
         return images
     except Exception as e:
         st.error(f"Error extracting images from PDF: {str(e)}")
         return []
     finally:
-        # Clean up
+        # Ensure all resources are closed/released
+        try:
+            if doc:
+                doc.close()
+                del doc
+        except:
+            pass
+            
         try:
             if temp_file and os.path.exists(temp_file.name):
                 os.unlink(temp_file.name)
-        except Exception as e:
+        except:
             pass
 
 # Optimized text extraction with caching
@@ -238,6 +238,7 @@ def extract_text_directly_from_pdf(pdf_bytes):
     """Extract text from all pages of the PDF"""
     extracted_text = ""
     temp_file = None
+    doc = None
     
     try:
         # Create a temporary file for the PDF
@@ -249,28 +250,65 @@ def extract_text_directly_from_pdf(pdf_bytes):
         doc = fitz.open(temp_file.name)
         total_pages = len(doc)
         
-        # Extract text from all pages
-        for page_num in range(total_pages):
-            page = doc.load_page(page_num)
-            extracted_text += f"[Page {page_num+1}]\n" + page.get_text() + "\n\n"
+        # Extract text in batches
+        batch_size = 5  # Process 5 pages at a time
+        for batch_start in range(0, total_pages, batch_size):
+            batch_end = min(batch_start + batch_size, total_pages)
+            batch_text = ""
+            
+            for page_num in range(batch_start, batch_end):
+                page = doc.load_page(page_num)
+                batch_text += f"[Page {page_num+1}]\n" + page.get_text() + "\n\n"
+                
+            extracted_text += batch_text
+            
+            # Force garbage collection after each batch
+            gc.collect()
         
-        doc.close()
         return extracted_text
     except Exception as e:
         st.warning(f"Text extraction warning: {str(e)}")
         return ""
     finally:
-        # Clean up
+        # Ensure all resources are closed/released
+        try:
+            if doc:
+                doc.close()
+                del doc
+        except:
+            pass
+            
         try:
             if temp_file and os.path.exists(temp_file.name):
                 os.unlink(temp_file.name)
-        except Exception as e:
+        except:
             pass
 
 def analyze_whole_brochure(images, prompt, extracted_text=""):
     """Analyze brochure with all pages, but use smart sampling for Gemini API"""
     try:
         with st.spinner("Analyzing brochure with AI..."):
+            # Add a safeguard for maximum number of images
+            max_images_to_process = 15
+            if len(images) > max_images_to_process:
+                st.info(f"Brochure has {len(images)} pages. For reliability, processing {max_images_to_process} representative pages.")
+                # Keep first few, last few, and sample middle pages
+                first_pages = images[:5]
+                last_pages = images[-5:] if len(images) > 10 else []
+                
+                # Sample from middle pages if needed
+                middle_count = max_images_to_process - len(first_pages) - len(last_pages)
+                if middle_count > 0 and len(images) > (len(first_pages) + len(last_pages)):
+                    middle_images = images[len(first_pages):-len(last_pages) if len(last_pages) > 0 else None]
+                    step = max(1, len(middle_images) // middle_count)
+                    middle_samples = [middle_images[i] for i in range(0, len(middle_images), step)][:middle_count]
+                else:
+                    middle_samples = []
+                
+                selected_images = first_pages + middle_samples + last_pages
+            else:
+                selected_images = images
+            
             # Initialize the Gemini model - use flash version for speed
             model = genai.GenerativeModel('gemini-1.5-flash')
             
@@ -285,51 +323,34 @@ def analyze_whole_brochure(images, prompt, extracted_text=""):
                 # Upload directly from BytesIO
                 return genai.upload_file(img_bytes, mime_type="image/jpeg", display_name=f"page_{index+1}.jpg")
 
-            # For Gemini API, we still need to sample if there are too many pages
-            # as the API has token limits
-            if len(images) > 8:
-                # Always include first 4 pages (often contain key information)
-                first_batch = images[:4]
-                
-                # Include last 2 pages (often contain contact info and important details)
-                last_batch = images[-2:] if len(images) > 6 else []
-                
-                # Sample from middle pages
-                remaining = images[4:-2] if len(images) > 6 else images[4:]
-                num_remaining_samples = min(6, len(remaining))  # Sample up to 6 more pages
-                
-                if remaining:
-                    step = max(1, len(remaining) // num_remaining_samples)
-                    middle_samples = [remaining[i] for i in range(0, len(remaining), step)][:num_remaining_samples]
-                else:
-                    middle_samples = []
-                
-                selected_images = first_batch + middle_samples + last_batch
-                st.caption(f"Sending {len(selected_images)} representative pages to Gemini API from all {len(images)} extracted pages")
-            else:
-                selected_images = images
-
-            # Prepare images in parallel for speed
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                # Process images concurrently
-                future_to_idx = {executor.submit(image_to_part, img, i): i for i, img in enumerate(selected_images)}
-                uploaded_images = [None] * len(selected_images)
-                
-                for future in concurrent.futures.as_completed(future_to_idx):
-                    idx = future_to_idx[future]
-                    try:
-                        uploaded_images[idx] = future.result()
-                    except Exception as e:
-                        st.warning(f"Error uploading image {idx}: {str(e)}")
+            # Prepare images in smaller batches for reliability
+            uploaded_images = []
+            batch_size = 3  # Process 3 images at a time
             
-            # Filter out any None values from failed uploads
-            uploaded_images = [img for img in uploaded_images if img is not None]
+            for batch_start in range(0, len(selected_images), batch_size):
+                batch_end = min(batch_start + batch_size, len(selected_images))
+                current_batch = selected_images[batch_start:batch_end]
+                
+                # Process this batch with parallel uploads
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future_to_idx = {executor.submit(image_to_part, img, i + batch_start): i + batch_start 
+                                    for i, img in enumerate(current_batch)}
+                    
+                    for future in concurrent.futures.as_completed(future_to_idx):
+                        idx = future_to_idx[future]
+                        try:
+                            uploaded_images.append(future.result())
+                        except Exception as e:
+                            st.warning(f"Error uploading image {idx+1}: {str(e)}")
+                
+                # Force garbage collection after each batch
+                gc.collect()
             
             # Optimize text context - trim to essential parts
             content_parts = [prompt]
             if extracted_text:
                 # Limit text to avoid token issues but keep enough context
-                max_text_len = 20000
+                max_text_len = 15000
                 content_parts.append(f"Text context (focus on proper names):\n{extracted_text[:max_text_len]}")
             
             content_parts.extend(uploaded_images)
@@ -355,100 +376,131 @@ def analyze_whole_brochure(images, prompt, extracted_text=""):
         return None
 
 if uploaded_file is not None:
-    # Display the uploaded file
-    file_type = uploaded_file.type
-    
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        st.subheader("Uploaded Brochure")
+    # Set processing state to prevent multiple processing attempts
+    if st.session_state.processing_state == 'ready':
+        st.session_state.processing_state = 'processing'
         
-        extracted_text = ""
-        if "pdf" in file_type:
-            # Show a progress indicator immediately 
-            with st.spinner("Processing PDF..."):
-                # Read the bytes once and use for both extraction methods
-                pdf_bytes = uploaded_file.read()
+        # Display the uploaded file
+        file_type = uploaded_file.type
+        
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            st.subheader("Uploaded Brochure")
+            
+            try:
+                extracted_text = ""
+                if "pdf" in file_type:
+                    # Show a progress indicator immediately 
+                    with st.spinner("Processing PDF..."):
+                        # Reset file pointer before reading
+                        uploaded_file.seek(0)
+                        # Read the bytes once and use for both extraction methods
+                        pdf_bytes = uploaded_file.read()
+                        
+                        # Extract ALL images from the PDF with improved function
+                        images = cached_image_extraction(pdf_bytes)
+                        
+                        # Get text from ALL pages
+                        extracted_text = cached_text_extraction(pdf_bytes)
+                        
+                        if images:
+                            st.image(images[0], caption="First page preview", use_container_width=True)
+                            st.caption(f"PDF processed with all {len(images)} pages extracted")
+                        else:
+                            st.error("Could not extract images from PDF")
+                else:  # Image file
+                    # Reset file pointer before reading
+                    uploaded_file.seek(0)
+                    image = process_image(uploaded_file)
+                    if image:
+                        st.image(image, caption="Uploaded Image", use_container_width=True)
+                        images = [image]
+                    else:
+                        st.error("Could not process image file")
+                        images = []
                 
-                # Extract ALL images from the PDF
-                images = cached_image_extraction(pdf_bytes)
-                
-                # Get text from ALL pages in parallel with image extraction
-                extracted_text = cached_text_extraction(pdf_bytes)
-                
-                if images:
-                    st.image(images[0], caption="First page preview", use_container_width=True)
-                    st.caption(f"PDF processed with all {len(images)} pages extracted")
-                else:
-                    st.error("Could not extract images from PDF")
-        else:  # Image file
-            image = process_image(uploaded_file)
-            if image:
-                st.image(image, caption="Uploaded Image", use_container_width=True)
-                images = [image]
-            else:
+                # Reset processing state when done with initial processing
+                st.session_state.processing_state = 'ready'
+                        
+            except Exception as e:
+                st.error(f"Error processing file: {str(e)}")
+                # Reset on error
+                st.session_state.processing_state = 'ready'
+                reset_app_state()
                 images = []
-    
-    with col2:
-        st.subheader("Property USPs")
+                extracted_text = ""
         
-        analyze_button = st.button("Extract USPs")
-        
-        # For better UX, show a placeholder immediately
-        result_placeholder = st.empty()
-        
-        if analyze_button:
-            # Clear cache again before analysis to ensure clean state
-            clear_cached_data()
+        with col2:
+            st.subheader("Property USPs")
             
-            if not setup_gemini_api():
-                st.stop()
+            analyze_button = st.button("Extract USPs")
+            
+            # For better UX, show a placeholder immediately
+            result_placeholder = st.empty()
+            
+            if analyze_button and 'images' in locals() and images:
+                # Set processing state to analysis
+                st.session_state.processing_state = 'analyzing'
                 
-            if not images:
-                st.error("No valid images to analyze.")
-                st.stop()
-            
-            # Show progress immediately
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            status_text.info("Starting analysis...")
-            
-            # Start time for performance tracking
-            start_time = time.time()
-            
-            # Update progress
-            progress_bar.progress(40)
-            status_text.info("Preparing images for analysis... (40%)")
-            
-            # Analyze images
-            analysis = analyze_whole_brochure(images, prompt, extracted_text)
-            
-            # Update progress
-            progress_bar.progress(90)
-            status_text.info("Finalizing results... (90%)")
-            
-            # Display execution time
-            execution_time = time.time() - start_time
-            
-            if analysis:
-                # Clear placeholder and progress indicators
-                status_text.empty()
-                progress_bar.progress(100)
+                # Clear cache again before analysis to ensure clean state
+                clear_cached_data()
                 
-                # Show results
-                st.markdown(analysis)
-                st.success(f"Analysis completed in {execution_time:.1f} seconds")
+                if not setup_gemini_api():
+                    st.session_state.processing_state = 'ready'
+                    st.stop()
                 
-                # Option to download results
-                st.download_button(
-                    label="Download USPs",
-                    data=analysis,
-                    file_name="property_usps.txt",
-                    mime="text/plain"
-                )
-            else:
-                status_text.error("Failed to generate analysis. Please try again.")
-                progress_bar.empty()
+                # Show progress immediately
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                status_text.info("Starting analysis...")
+                
+                # Start time for performance tracking
+                start_time = time.time()
+                
+                try:
+                    # Update progress
+                    progress_bar.progress(40)
+                    status_text.info("Preparing images for analysis... (40%)")
+                    
+                    # Analyze images
+                    analysis = analyze_whole_brochure(images, prompt, extracted_text)
+                    
+                    # Update progress
+                    progress_bar.progress(90)
+                    status_text.info("Finalizing results... (90%)")
+                    
+                    # Display execution time
+                    execution_time = time.time() - start_time
+                    
+                    if analysis:
+                        # Clear placeholder and progress indicators
+                        status_text.empty()
+                        progress_bar.progress(100)
+                        
+                        # Show results
+                        st.markdown(analysis)
+                        st.success(f"Analysis completed in {execution_time:.1f} seconds")
+                        
+                        # Option to download results
+                        st.download_button(
+                            label="Download USPs",
+                            data=analysis,
+                            file_name="property_usps.txt",
+                            mime="text/plain"
+                        )
+                    else:
+                        status_text.error("Failed to generate analysis. Please try again.")
+                        progress_bar.empty()
+                except Exception as e:
+                    st.error(f"Analysis error: {str(e)}")
+                    status_text.empty()
+                    progress_bar.empty()
+                finally:
+                    # Always reset state when done
+                    st.session_state.processing_state = 'ready'
+                    # Force garbage collection
+                    gc.collect()
 
 # Footer
 st.divider()
