@@ -103,8 +103,21 @@ available in the brochure.
 # Main content area
 st.write("Upload Brochure.")
 
-# File uploader
+# Store the last uploaded file ID in session state to detect new uploads
+if 'last_file_id' not in st.session_state:
+    st.session_state.last_file_id = None
+
+# File uploader with cache clearing on new file selection
 uploaded_file = st.file_uploader("Choose a brochure file", type=["pdf", "jpg", "jpeg", "png"])
+
+# Check if a new file was uploaded and clear cache if so
+if uploaded_file is not None:
+    current_file_id = id(uploaded_file)
+    if st.session_state.last_file_id != current_file_id:
+        # Clear cache when a new file is selected
+        clear_cached_data()
+        cleanup_temp_files()
+        st.session_state.last_file_id = current_file_id
 
 def setup_gemini_api():
     try:
@@ -385,6 +398,9 @@ if uploaded_file is not None:
         result_placeholder = st.empty()
         
         if analyze_button:
+            # Clear cache again before analysis to ensure clean state
+            clear_cached_data()
+            
             if not setup_gemini_api():
                 st.stop()
                 
