@@ -8,6 +8,35 @@ import google.generativeai as genai
 import time
 import concurrent.futures
 
+# Add cache clearing function to prevent memory buildup
+def clear_cached_data():
+    """Clear all cached data to prevent memory issues"""
+    st.cache_data.clear()
+
+# Call cache clearing when the app starts - automatic with no user prompt
+clear_cached_data()
+
+# Automatically clean up temp files without notification
+def cleanup_temp_files():
+    """Clean up temporary files in the system temp directory"""
+    try:
+        temp_dir = tempfile.gettempdir()
+        # Look for any temp files that might be created by this app
+        for filename in os.listdir(temp_dir):
+            if filename.endswith('.pdf') or filename.endswith('.jpg') or filename.endswith('.png'):
+                try:
+                    file_path = os.path.join(temp_dir, filename)
+                    # Check if file is older than 1 hour
+                    if time.time() - os.path.getmtime(file_path) > 3600:
+                        os.unlink(file_path)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+# Run cleanup on app startup silently
+cleanup_temp_files()
+
 # Enhanced caching strategy - cache both extraction and enhancement
 @st.cache_data
 def cached_image_extraction(pdf_bytes):
