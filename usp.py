@@ -291,7 +291,6 @@ def analyze_whole_brochure(images, prompt, extracted_text=""):
             # Add a safeguard for maximum number of images
             max_images_to_process = 15
             if len(images) > max_images_to_process:
-                st.info(f"Brochure has {len(images)} pages. For reliability, processing {max_images_to_process} representative pages.")
                 # Keep first few, last few, and sample middle pages
                 first_pages = images[:5]
                 last_pages = images[-5:] if len(images) > 10 else []
