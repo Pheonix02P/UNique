@@ -142,7 +142,6 @@ def analyze_whole_brochure(images, prompt):
                 step = max(1, len(remaining) // num_remaining_samples)
                 samples = [remaining[i] for i in range(0, len(remaining), step)][:num_remaining_samples]
                 selected_images = first_batch + samples
-                st.caption(f"Analyzing {len(selected_images)} representative pages from all {len(images)} pages")
             else:
                 selected_images = images
 
