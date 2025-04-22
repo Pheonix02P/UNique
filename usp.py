@@ -134,18 +134,8 @@ def analyze_whole_brochure(images, prompt):
                 # Now upload the temporary file
                 return genai.upload_file(temp_file.name, mime_type="image/png", display_name=f"page_{index+1}.png")
 
-            # Select representative images
-            if len(images) > 8:
-                first_batch = images[:3]
-                remaining = images[3:]
-                num_remaining_samples = min(13, len(remaining))
-                step = max(1, len(remaining) // num_remaining_samples)
-                samples = [remaining[i] for i in range(0, len(remaining), step)][:num_remaining_samples]
-                selected_images = first_batch + samples
-            else:
-                selected_images = images
-
-            # Upload and prepare images for Gemini
+# Use all images from the PDF
+            selected_images = images            # Upload and prepare images for Gemini
             uploaded_images = [image_to_part(img, i) for i, img in enumerate(selected_images)]
 
             # Generate content using Gemini
