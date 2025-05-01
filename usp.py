@@ -1,17 +1,11 @@
 import streamlit as st
 import os
 import tempfile
-from PIL import Image
-import fitz  # PyMuPDF for PDF handling
-import io
 import google.generativeai as genai
 import time
-
-# Enable caching
-@st.cache_data
-def cached_image_extraction(pdf_bytes):
-    """Cached function to extract images from PDF bytes"""
-    return extract_images_from_pdf_bytes(pdf_bytes)
+import fitz  # PyMuPDF for PDF rendering
+import io
+from PIL import Image
 
 # Page configuration
 st.set_page_config(page_title="Premium Property USP Analyzer", layout="wide")
@@ -46,7 +40,7 @@ available in the brochure.
 st.write("Upload Brochure.")
 
 # File uploader
-uploaded_file = st.file_uploader("Choose a brochure file", type=["pdf", "jpg", "jpeg", "png"])
+uploaded_file = st.file_uploader("Choose a brochure file", type=["pdf"])
 
 def setup_gemini_api():
     try:
@@ -56,122 +50,84 @@ def setup_gemini_api():
         st.error(f"Error configuring Gemini API: {str(e)}")
         return False
 
-def process_image(image_file):
-    try:
-        image = Image.open(image_file)
-        # Resize large images to optimize processing speed
-        max_size = 1200
-        if image.width > max_size or image.height > max_size:
-            ratio = min(max_size/image.width, max_size/image.height)
-            new_size = (int(image.width * ratio), int(image.height * ratio))
-            image = image.resize(new_size, Image.LANCZOS)
-        return image
-    except Exception as e:
-        st.error(f"Error processing image: {str(e)}")
-        return None
-
-def extract_images_from_pdf_bytes(pdf_bytes):
-    """Extract images from PDF bytes with optimized settings"""
-    images = []
-    temp_file = None
-    
-    try:
-        # Create a temporary file for the PDF
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
-        temp_file.write(pdf_bytes)
-        temp_file.close()
-        
-        # Open the PDF with PyMuPDF
-        doc = fitz.open(temp_file.name)
-        total_pages = len(doc)
-        
-        # Process all pages
-        with st.spinner(f"Extracting all {total_pages} pages..."):
-            for page_num in range(total_pages):
-                page = doc.load_page(page_num)
-                # Lower resolution for speed (1.2 instead of 2)
-                pix = page.get_pixmap(matrix=fitz.Matrix(1.2, 1.2))
-                img_data = pix.tobytes("ppm")
-                img = Image.open(io.BytesIO(img_data))
-                
-                # Optimize image size for API
-                max_dim = 1200
-                if img.width > max_dim or img.height > max_dim:
-                    ratio = min(max_dim/img.width, max_dim/img.height)
-                    new_size = (int(img.width * ratio), int(img.height * ratio))
-                    img = img.resize(new_size, Image.LANCZOS)
-                    
-                images.append(img)
-        
-        # Close the document explicitly
-        doc.close()
-        return images
-    except Exception as e:
-        st.error(f"Error extracting images from PDF: {str(e)}")
-        return []
-    finally:
-        # Clean up
-        try:
-            if temp_file and os.path.exists(temp_file.name):
-                os.unlink(temp_file.name)
-        except Exception as e:
-            pass
-
-def analyze_whole_brochure(images, prompt):
-    """Analyze brochure images in optimized batches"""
+def analyze_pdf(pdf_file, prompt):
+    """Analyze PDF directly with Gemini"""
     try:
         with st.spinner("Analyzing brochure with AI..."):
             # Initialize the Gemini model
             model = genai.GenerativeModel('gemini-1.5-flash')
-
-            # Helper: convert image to byte stream and upload
-            def image_to_part(image, index):
-                # Create a temporary file from the image
-                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
-                image.save(temp_file, format="PNG")
-                temp_file.close()  # Close the file to allow it to be used for upload
+            
+            # Create a temporary file to store the PDF
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+            temp_file.write(pdf_file.read())
+            temp_file.close()
+            
+            # Upload the PDF file directly
+            uploaded_pdf = genai.upload_file(temp_file.name, mime_type="application/pdf")
+            
+            # Generate content using Gemini with the PDF
+            response = model.generate_content([prompt, uploaded_pdf])
+            
+            # Clean up the temporary file
+            try:
+                if os.path.exists(temp_file.name):
+                    os.unlink(temp_file.name)
+            except Exception as e:
+                pass
                 
-                # Now upload the temporary file
-                return genai.upload_file(temp_file.name, mime_type="image/png", display_name=f"page_{index+1}.png")
-
-# Use all images from the PDF
-            selected_images = images            # Upload and prepare images for Gemini
-            uploaded_images = [image_to_part(img, i) for i, img in enumerate(selected_images)]
-
-            # Generate content using Gemini
-            response = model.generate_content([prompt] + uploaded_images)
             return response.text
 
     except Exception as e:
         st.error(f"Error generating content with Gemini: {str(e)}")
         return None
 
+def render_pdf_preview(pdf_bytes):
+    """Render the first page of a PDF as an image for preview"""
+    try:
+        # Create a memory buffer from the PDF bytes
+        pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
+        
+        if len(pdf_document) > 0:
+            # Load the first page
+            first_page = pdf_document.load_page(0)
+            
+            # Render page to an image with a reasonable resolution
+            pix = first_page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+            
+            # Convert to PIL Image
+            img_data = pix.tobytes("ppm")
+            img = Image.open(io.BytesIO(img_data))
+            
+            # Close the document
+            pdf_document.close()
+            
+            return img
+        else:
+            pdf_document.close()
+            return None
+    except Exception as e:
+        st.error(f"Error rendering PDF preview: {str(e)}")
+        return None
+
 if uploaded_file is not None:
-    # Display the uploaded file
-    file_type = uploaded_file.type
-    
     col1, col2 = st.columns([1, 1])
     
     with col1:
         st.subheader("Uploaded Brochure")
+        st.write(f"File: {uploaded_file.name}")
         
-        if "pdf" in file_type:
-            # Read the bytes once and cache the extraction
-            pdf_bytes = uploaded_file.read()
-            images = cached_image_extraction(pdf_bytes)
+        # Read the PDF file once
+        pdf_bytes = uploaded_file.read()
+        
+        # Display the first page as a preview
+        preview_image = render_pdf_preview(pdf_bytes)
+        if preview_image:
+            st.image(preview_image, caption="First page preview", use_container_width=True)
+        else:
+            st.warning("Could not generate preview for this PDF")
             
-            if images:
-                st.image(images[0], caption="First page preview", use_container_width=True)
-                st.caption(f"PDF with {len(images)} total pages")
-            else:
-                st.error("Could not extract images from PDF")
-        else:  # Image file
-            image = process_image(uploaded_file)
-            if image:
-                st.image(image, caption="Uploaded Image", use_container_width=True)
-                images = [image]
-            else:
-                images = []
+        # Reset the file pointer for later use
+        uploaded_file.seek(0)
     
     with col2:
         st.subheader("Property USPs")
@@ -184,10 +140,6 @@ if uploaded_file is not None:
         if analyze_button:
             if not setup_gemini_api():
                 st.stop()
-                
-            if not images:
-                st.error("No valid images to analyze.")
-                st.stop()
             
             # Start time for performance tracking
             start_time = time.time()
@@ -195,8 +147,8 @@ if uploaded_file is not None:
             # Show thinking state to user
             result_placeholder.info("Thinking... This may take 30-60 seconds depending on the file size.")
             
-            # Analyze all images as one brochure
-            analysis = analyze_whole_brochure(images, prompt)
+            # Analyze PDF directly - no need to seek(0) again since we already have pdf_bytes
+            analysis = analyze_pdf(uploaded_file, prompt)
             
             # Display execution time
             execution_time = time.time() - start_time
