@@ -14,8 +14,8 @@ st.title("USP using Gemini")
 # Initialize API key
 GEMINI_API_KEY = "AIzaSyCIR8-WfadSCfOZTr1PxJFXRzP5HbiE9IQ"
 
-# Set up prompt
-prompt = """You are provided with the attached brochure for a premium residential project. Your task is to extract the unique
+# Set up base prompt
+base_prompt = """You are provided with the attached brochure for a premium residential project. Your task is to extract the unique
 selling propositions (USPs) that will positively influence potential buyer decisions, keeping in mind the expectations of buyers in this segment.
 Focus on the following aspects, aligning with the expectations of a premium homebuyer:
 •            Thematic and Architectural Uniqueness
@@ -39,14 +39,27 @@ If and only if the proper name of an architect, designer, builder,consultant, or
 •  Do not include headers in the bullet points.
 •  Ensure grammatical correctness and capitalize the first letters of proper nouns.
 Focus on : (factual information, lifestyle appeal, and renowned names associated with the project).
-• Include unique points and factual information from the following reference points given to you.
+• Include unique points and factual information from the following reference points given to you."""
+
+# Additional prompt for when old USPs are provided
+old_usps_prompt = """
+Additionally, I'm providing you with a list of previously identified USPs for this or a similar property. Review these old USPs and consider them alongside the brochure contents.
+
+OLD USPs:
+{old_usps}
+
+Please merge the insights from both sources, removing duplicates and preserving the most compelling and unique selling points from both the brochure and the old USP list. Ensure your final list represents the strongest combined USPs, maintaining all the formatting and length requirements mentioned earlier.
 """
 
 # Main content area
-st.write("Upload Brochure.")
+st.write("Upload Brochure and (Optionally) Enter Old USPs")
 
 # File uploader
 uploaded_file = st.file_uploader("Choose a brochure file", type=["pdf"])
+
+# Text area for old USPs
+st.subheader("Enter Old USPs (Optional)")
+old_usps = st.text_area("Paste previous USPs here", height=200)
 
 def setup_gemini_api():
     try:
@@ -153,8 +166,13 @@ if uploaded_file is not None:
             # Show thinking state to user
             result_placeholder.info("Thinking... This may take 30-60 seconds depending on the file size.")
             
-            # Analyze PDF directly - no need to seek(0) again since we already have pdf_bytes
-            analysis = analyze_pdf(uploaded_file, prompt)
+            # Prepare the prompt based on whether old USPs are provided
+            full_prompt = base_prompt
+            if old_usps.strip():
+                full_prompt += old_usps_prompt.format(old_usps=old_usps)
+            
+            # Analyze PDF directly
+            analysis = analyze_pdf(uploaded_file, full_prompt)
             
             # Display execution time
             execution_time = time.time() - start_time
