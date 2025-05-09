@@ -6,6 +6,7 @@ import time
 import fitz  # PyMuPDF for PDF rendering
 import io
 from PIL import Image
+import requests
 
 # Page configuration
 st.set_page_config(page_title="Premium Property USP Analyzer", layout="wide")
@@ -52,10 +53,14 @@ Please merge the insights from both sources, removing duplicates and preserving 
 """
 
 # Main content area
-st.write("Upload Brochure and (Optionally) Enter Old USPs")
+st.write("Upload Brochure or Enter URL and (Optionally) Enter Old USPs")
 
 # File uploader
-uploaded_file = st.file_uploader("Choose a brochure file", type=["pdf"])
+uploaded_file = st.file_uploader("Upload a brochure file", type=["pdf"])
+
+# URL input
+st.write("OR")
+pdf_url = st.text_input("Enter URL to PDF brochure", placeholder="https://example.com/brochure.pdf")
 
 # Text area for old USPs
 st.subheader("Enter Old USPs (Optional)")
@@ -69,7 +74,25 @@ def setup_gemini_api():
         st.error(f"Error configuring Gemini API: {str(e)}")
         return False
 
-def analyze_pdf(pdf_file, prompt):
+def download_pdf_from_url(url):
+    """Download a PDF from a URL"""
+    try:
+        response = requests.get(url, stream=True)
+        response.raise_for_status()  # Raise an error for bad responses
+        
+        # Check if the content is actually a PDF
+        content_type = response.headers.get('Content-Type', '')
+        if 'application/pdf' not in content_type and not url.lower().endswith('.pdf'):
+            st.error(f"The URL does not point to a valid PDF file. Content-Type: {content_type}")
+            return None
+        
+        # Return the content as bytes
+        return response.content
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error downloading PDF: {str(e)}")
+        return None
+
+def analyze_pdf(pdf_bytes, prompt):
     """Analyze PDF directly with Gemini"""
     try:
         with st.spinner("Analyzing brochure with AI..."):
@@ -78,7 +101,7 @@ def analyze_pdf(pdf_file, prompt):
             
             # Create a temporary file to store the PDF
             temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
-            temp_file.write(pdf_file.read())
+            temp_file.write(pdf_bytes)
             temp_file.close()
             
             # Upload the PDF file directly
@@ -128,15 +151,25 @@ def render_pdf_preview(pdf_bytes):
         st.error(f"Error rendering PDF preview: {str(e)}")
         return None
 
+# Check if we have a PDF from either upload or URL
+pdf_bytes = None
+input_source = None
+
 if uploaded_file is not None:
+    pdf_bytes = uploaded_file.read()
+    uploaded_file.seek(0)  # Reset file pointer for later use
+    input_source = f"File: {uploaded_file.name}"
+elif pdf_url and pdf_url.strip():
+    pdf_bytes = download_pdf_from_url(pdf_url.strip())
+    if pdf_bytes:
+        input_source = f"URL: {pdf_url}"
+
+if pdf_bytes:
     col1, col2 = st.columns([1, 1])
     
     with col1:
         st.subheader("Uploaded Brochure")
-        st.write(f"File: {uploaded_file.name}")
-        
-        # Read the PDF file once
-        pdf_bytes = uploaded_file.read()
+        st.write(input_source)
         
         # Display the first page as a preview
         preview_image = render_pdf_preview(pdf_bytes)
@@ -144,9 +177,6 @@ if uploaded_file is not None:
             st.image(preview_image, caption="First page preview", use_container_width=True)
         else:
             st.warning("Could not generate preview for this PDF")
-            
-        # Reset the file pointer for later use
-        uploaded_file.seek(0)
     
     with col2:
         st.subheader("Property USPs")
@@ -172,7 +202,7 @@ if uploaded_file is not None:
                 full_prompt += old_usps_prompt.format(old_usps=old_usps)
             
             # Analyze PDF directly
-            analysis = analyze_pdf(uploaded_file, full_prompt)
+            analysis = analyze_pdf(pdf_bytes, full_prompt)
             
             # Display execution time
             execution_time = time.time() - start_time
