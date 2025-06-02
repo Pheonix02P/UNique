@@ -97,7 +97,7 @@ def analyze_pdf(pdf_bytes, prompt):
     try:
         with st.spinner("Analyzing brochure with AI..."):
             # Initialize the Gemini model
-            model = genai.GenerativeModel('gemini-1.5-pro'')
+            model = genai.GenerativeModel('gemini-1.5-pro')
             
             # Create a temporary file to store the PDF
             temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
