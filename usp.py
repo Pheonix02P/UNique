@@ -13,7 +13,7 @@ st.set_page_config(page_title="Premium Property USP Analyzer", layout="wide")
 st.title("USP using Gemini")
 
 # Initialize API key
-GEMINI_API_KEY = "AIzaSyBVfJgR2anTUQiFf4M9BaKcGL66eL3T1UA"
+GEMINI_API_KEY = "AIzaSyD6AGBVtEJRFe8kuHEwobVOoTkSubGND5Q"
 
 # Set up base prompt
 base_prompt = """You are provided with the attached brochure for a premium residential project. Your task is to extract the unique
