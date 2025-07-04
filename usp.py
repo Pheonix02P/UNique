@@ -32,7 +32,7 @@ NOTE:
 •            Keep in mind that the attachment may contain noise, so filter out any irrelevant content.
 •            Output the USPs as bullet points, ensuring each bullet point is 20 words or less.
 •           Ensure each point provides factual details about the project based on the information available in the brochure.
-•          Also return each usp into max 75 Characters
+
 *Important : 
 If and only if the proper name of an architect, designer, builder,consultant, or developer is explicitly mentioned in the brochure, include it in the USPs, Do not use common nouns such as designers or architect without the presence of a proper noun*
 •  Arrange them in descending order, with the most unique and attractive USP at the top.
@@ -41,7 +41,10 @@ If and only if the proper name of an architect, designer, builder,consultant, or
 •  Do not include headers in the bullet points.
 •  Ensure grammatical correctness and capitalize the first letters of proper nouns.
 Focus on : (factual information, lifestyle appeal, and renowned names associated with the project).
-• Include unique points and factual information from the following reference points given to you."""
+• Include unique points and factual information from the following reference points given to you.
+
+
+FINAL : RETURN EACH USP INTO 75 CHARACTER"""
 
 # Additional prompt for when old USPs are provided
 old_usps_prompt = """
