@@ -16,35 +16,50 @@ st.title("USP using Gemini")
 GEMINI_API_KEY = "AIzaSyD6AGBVtEJRFe8kuHEwobVOoTkSubGND5Q"
 
 # Set up base prompt
-base_prompt = """You are provided with the attached brochure for a premium residential project. Your task is to extract the unique
-selling propositions (USPs) that will positively influence potential buyer decisions, keeping in mind the expectations of buyers in this segment.
+base_prompt = """You are provided with the attached brochure for a premium residential project. Your task is to extract the unique selling propositions (USPs) that will positively influence potential buyer decisions, keeping in mind the expectations of buyers in this segment.
+
 Focus on the following aspects, aligning with the expectations of a premium homebuyer:
-•            Thematic and Architectural Uniqueness
-•            Facilities and Luxury Amenities
-•            Technology and Security Features  
-•            Landscape and Environment  
-•            Location Highlights  
-•            Awards and Recognition
-•            Any Other
- 
-Unique Features that enhance lifestyle, convenience, and security.
-NOTE:
-•            Keep in mind that the attachment may contain noise, so filter out any irrelevant content.
-•            Output the USPs as bullet points, ensuring each bullet point is 20 words or less.
-•           Ensure each point provides factual details about the project based on the information available in the brochure.
 
-*Important : 
-If and only if the proper name of an architect, designer, builder,consultant, or developer is explicitly mentioned in the brochure, include it in the USPs, Do not use common nouns such as designers or architect without the presence of a proper noun*
-•  Arrange them in descending order, with the most unique and attractive USP at the top.
--  Give priority to factual details explicitly mentioned in the text, such as the size of the clubhouse, project density, and greenery.
-•  Use a professional tone in your bullet points.
-•  Do not include headers in the bullet points.
-•  Ensure grammatical correctness and capitalize the first letters of proper nouns.
-Focus on : (factual information, lifestyle appeal, and renowned names associated with the project).
-• Include unique points and factual information from the following reference points given to you.
+Thematic and Architectural Uniqueness
 
+Facilities and Luxury Amenities
 
-FINAL : RETURN EACH USP INTO 75 CHARACTER"""
+Technology and Security Features
+
+Landscape and Environment
+
+Location Highlights
+
+Awards and Recognition
+
+Any Other Unique Features that enhance lifestyle, convenience, and security
+
+Important Guidelines:
+
+Keep in mind that the attachment may contain noise, so filter out any irrelevant content.
+
+Output the USPs as bullet points, ensuring each bullet point is 20 words or less.
+
+Ensure each point provides factual details about the project based on the information available in the brochure.
+
+If and only if the proper name of an architect, designer, builder, consultant, or developer is explicitly mentioned in the brochure, include it in the USPs. Do not use common nouns such as "designers" or "architect" without the presence of a proper noun.
+
+Arrange the USPs in descending order of uniqueness and appeal, placing the most attractive first.
+
+Give priority to factual details explicitly mentioned in the text, such as clubhouse size, project density, greenery percentage, etc.
+
+Use a professional tone in your bullet points.
+
+Do not include headers in the bullet points.
+
+Ensure grammatical correctness and capitalize the first letters of proper nouns.
+
+Focus on factual information, lifestyle appeal, and renowned names associated with the project.
+
+Additional Instruction:
+
+Each USP must be 75 characters or less.
+"""
 
 # Additional prompt for when old USPs are provided
 old_usps_prompt = """
