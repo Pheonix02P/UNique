@@ -58,7 +58,7 @@ Focus on factual information, lifestyle appeal, and renowned names associated wi
 
 Additional Instruction:
 
-Each USP must be written concisely—under 75 characters—to deliver maximum impact at a glance.
+return premium USPs for a luxury real estate project in under 75 characters each. Use well-articulated, crisp, and persuasive language that evokes exclusivity, elegance, and high-end lifestyle.
 """
 
 # Additional prompt for when old USPs are provided
