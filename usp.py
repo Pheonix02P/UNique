@@ -58,7 +58,7 @@ Focus on factual information, lifestyle appeal, and renowned names associated wi
 
 Additional Instruction:
 
-Each USP must be 75 characters or less.
+Each USP must be written concisely—under 75 characters—to deliver maximum impact at a glance.
 """
 
 # Additional prompt for when old USPs are provided
