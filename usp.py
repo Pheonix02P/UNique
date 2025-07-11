@@ -38,7 +38,7 @@ Important Guidelines:
 
 Keep in mind that the attachment may contain noise, so filter out any irrelevant content.
 
-Output the USPs as bullet points, ensuring each bullet point is 20 words or less and within 75 Characters also display the total characters in each usp in brackets .
+Output the USPs as bullet points, ensuring each bullet point is 20 words or less.
 
 Ensure each point provides factual details about the project based on the information available in the brochure.
 
