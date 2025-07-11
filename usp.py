@@ -56,7 +56,7 @@ Ensure grammatical correctness and capitalize the first letters of proper nouns.
 
 Focus on factual information, lifestyle appeal, and renowned names associated with the project.
 
-Additional Instruction:
+Convert each point into a 75-character limit, without losing the factual data of the point
 
 """
 
