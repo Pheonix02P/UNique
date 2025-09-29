@@ -78,7 +78,7 @@ st.subheader("Select Gemini Model")
 model_options = {
     "Gemini 2.0 Flash": "gemini-2.0-flash",
     "Gemini 1.5 Flash": "gemini-1.5-flash",
-    "Gemini 1.5 Pro": "gemini-1.5-pro"
+    "Gemini 2.5 Flash": "gemini-2.5-flash"
 }
 selected_model_name = st.selectbox(
     "Choose the AI model for analysis",
@@ -262,3 +262,4 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
