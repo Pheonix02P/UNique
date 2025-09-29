@@ -115,7 +115,7 @@ def analyze_pdf(pdf_bytes, prompt):
     try:
         with st.spinner("Analyzing brochure with AI..."):
             # Initialize the Gemini model
-            model = genai.GenerativeModel('gemini-2.5-flash')
+            model = genai.GenerativeModel('gemini-2.0-flash')
             
             # Create a temporary file to store the PDF
             temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
@@ -244,6 +244,7 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
 
 
 
