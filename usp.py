@@ -73,6 +73,21 @@ Please merge the insights from both sources, removing duplicates and preserving 
 # Main content area
 st.write("Upload Brochure or Enter URL and (Optionally) Enter Old USPs")
 
+# Model selection dropdown
+st.subheader("Select Gemini Model")
+model_options = {
+    "Gemini 2.0 Flash": "gemini-2.0-flash",
+    "Gemini 1.5 Flash": "gemini-1.5-flash",
+    "Gemini 1.5 Pro": "gemini-1.5-pro"
+}
+selected_model_name = st.selectbox(
+    "Choose the AI model for analysis",
+    options=list(model_options.keys()),
+    index=0,
+    help="Gemini 2.0 Flash is faster and cost-effective. Gemini 1.5 Pro offers more advanced capabilities."
+)
+selected_model = model_options[selected_model_name]
+
 # File uploader
 uploaded_file = st.file_uploader("Upload a brochure file", type=["pdf"])
 
@@ -110,12 +125,12 @@ def download_pdf_from_url(url):
         st.error(f"Error downloading PDF: {str(e)}")
         return None
 
-def analyze_pdf(pdf_bytes, prompt):
+def analyze_pdf(pdf_bytes, prompt, model_name):
     """Analyze PDF directly with Gemini"""
     try:
-        with st.spinner("Analyzing brochure with AI..."):
-            # Initialize the Gemini model
-            model = genai.GenerativeModel('gemini-2.0-flash')
+        with st.spinner(f"Analyzing brochure with {model_name}..."):
+            # Initialize the Gemini model with the selected model
+            model = genai.GenerativeModel(model_name)
             
             # Create a temporary file to store the PDF
             temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
@@ -199,6 +214,9 @@ if pdf_bytes:
     with col2:
         st.subheader("Property USPs")
         
+        # Display selected model
+        st.info(f"Using model: {selected_model_name}")
+        
         analyze_button = st.button("Extract USPs")
         
         # For better UX, show a placeholder immediately
@@ -219,8 +237,8 @@ if pdf_bytes:
             if old_usps.strip():
                 full_prompt += old_usps_prompt.format(old_usps=old_usps)
             
-            # Analyze PDF directly
-            analysis = analyze_pdf(pdf_bytes, full_prompt)
+            # Analyze PDF directly with selected model
+            analysis = analyze_pdf(pdf_bytes, full_prompt, selected_model)
             
             # Display execution time
             execution_time = time.time() - start_time
@@ -229,7 +247,7 @@ if pdf_bytes:
                 # Clear placeholder and show result
                 result_placeholder.empty()
                 st.markdown(analysis)
-                st.caption(f"Analysis completed in {execution_time:.1f} seconds")
+                st.caption(f"Analysis completed in {execution_time:.1f} seconds using {selected_model_name}")
                 
                 # Option to download results
                 st.download_button(
@@ -244,12 +262,3 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
-
-
-
-
-
-
-
-
-
