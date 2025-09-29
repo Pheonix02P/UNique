@@ -81,10 +81,10 @@ model_options = {
     "Gemini 2.5 Flash": "gemini-2.5-flash"
 }
 selected_model_name = st.selectbox(
-    "Choose the AI model for analysis",
+    "Choose the AI model for analysis/Switch Models while facing any issue or errors",
     options=list(model_options.keys()),
     index=0,
-    help="Gemini 2.0 Flash is faster and cost-effective. Gemini 1.5 Pro offers more advanced capabilities."
+    help="Gemini 2.0 Flash is faster and cost-effective."
 )
 selected_model = model_options[selected_model_name]
 
@@ -262,4 +262,5 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
 
