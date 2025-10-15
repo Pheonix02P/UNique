@@ -36,7 +36,6 @@ base_prompt = """You are provided with a brochure for a premium residential proj
     - Investment Potential
     - Any Other Unique Features that enhance lifestyle, convenience, and security.
     NOTE:
-    •   Output the USPs as bullet points, ensuring each bullet point is 20 words or less.
     •   Ensure each point provides factual details about the project based on the information available in the brochure.
     •   *Important : If and only if the proper name of an architect, designer, builder, consultant, or developer is explicitly mentioned in the brochure, include it in the USPs, Do not use common nouns such as designers or architect without the presence of a proper noun*
     •   Arrange them in descending order, with the most unique and attractive USP at the top.
@@ -47,7 +46,7 @@ base_prompt = """You are provided with a brochure for a premium residential proj
     •   Focus on: (factual information, lifestyle appeal, and renowned names associated with the project).
     •   Make sure to return a minimum of 5 USPs and a maximum of 7 USPs
     •   Do not start a USP with "-" or end with "."
-    •   Strictly make sure each USP is not more than maximum of 75 characters 
+    •   VERY IMPORTANT: make sure each USP is not more than maximum of 75 characters 
 
 """
 
@@ -257,5 +256,6 @@ if pdf_bytes:
 st.divider()
 
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
 
 
