@@ -118,32 +118,35 @@ def create_genai_client():
 def analyze_pdf_with_genai(pdf_bytes: bytes, prompt: str, model_id: str) -> str | None:
     try:
         client = create_genai_client()
-        # Upload file
+
+        # Write PDF temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tf:
             tf.write(pdf_bytes)
             tmp_path = tf.name
 
-        file_obj = client.files.upload(file=tmp_path, mime_type="application/pdf")
-        # Prepare contents list: first prompt text, then the file input
+        # Upload file (new API — no mime_type argument)
+        uploaded_file = client.files.upload(file=tmp_path)
+
+        # Prepare parts: text + file
         contents = [
             types.Part.from_text(prompt),
-            types.Part.from_file(file_obj, mime_type="application/pdf")
+            types.Part.from_uri(uploaded_file.uri)  # ✅ new SDK style
         ]
 
+        # Generate response
         response = client.models.generate_content(
             model=model_id,
             contents=contents
         )
-        # Clean up temp file
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
 
+        # Cleanup
+        os.unlink(tmp_path)
         return response.text
+
     except Exception as e:
         st.error(f"GenAI error: {e}")
         return None
+
 
 # ========== Main Logic ==========
 
@@ -193,4 +196,5 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer — Powered by Google Gemini / GenAI")
+
 
