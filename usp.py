@@ -16,7 +16,7 @@ st.title("USP using Gemini")
 GEMINI_API_KEY = "AIzaSyDm3sAZsBlO2UTIsD9oBetBYJrhhXXdipE"
 
 # Set up base prompt
-base_prompt = """You are provided with a brochure for a premium residential project priced above Your task is to extract the unique selling propositions (USPs) that will positively influence potential buyer decisions, keeping in mind the expectations of buyers in this segment.
+base_prompt = """You are provided with a brochure for a premium residential project. Your task is to extract the unique selling propositions (USPs) that will positively influence potential buyer decisions, keeping in mind the expectations of buyers in this segment.
     Focus on the following aspects, aligning with the expectations of a premium homebuyer:
     - Thematic and Architectural Uniqueness
     - Facilities and Luxury Amenities
@@ -47,6 +47,7 @@ base_prompt = """You are provided with a brochure for a premium residential proj
     •   Focus on: (factual information, lifestyle appeal, and renowned names associated with the project).
     •   Make sure to return a minimum of 5 USPs and a maximum of 7 USPs
     •   Do not start a USP with "-" or end with "."
+    •   Strictly make sure each USP is not more than maximum of 75 characters 
 
 """
 
@@ -256,3 +257,4 @@ if pdf_bytes:
 st.divider()
 
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
