@@ -126,14 +126,14 @@ def download_pdf_from_url(url):
         return None
 
 def analyze_pdf(pdf_bytes, prompt, model_name):
-    """Analyze PDF directly with Gemini using the latest API"""
+    """Analyze PDF directly with Gemini using the latest client.files.upload API"""
     temp_file_path = None
     uploaded_file_obj = None
     
     try:
         with st.spinner(f"Analyzing brochure with {model_name}..."):
-            # Initialize the Gemini model with the selected model
-            model = genai.GenerativeModel(model_name)
+            # Create a client instance
+            client = genai.Client(api_key=GEMINI_API_KEY)
             
             # Create a temporary file to store the PDF
             temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
@@ -141,17 +141,16 @@ def analyze_pdf(pdf_bytes, prompt, model_name):
             temp_file.close()
             temp_file_path = temp_file.name
             
-            # Upload the PDF file using the File API (updated method)
+            # Upload the PDF file using the latest client.files.upload method
             st.info("Uploading file to Gemini...")
-            uploaded_file_obj = genai.upload_file(
-                path=temp_file_path,
-                display_name="property_brochure.pdf"
+            uploaded_file_obj = client.files.upload(
+                path=temp_file_path
             )
             
             # Wait for the file to be processed
             while uploaded_file_obj.state.name == "PROCESSING":
                 time.sleep(1)
-                uploaded_file_obj = genai.get_file(uploaded_file_obj.name)
+                uploaded_file_obj = client.files.get(name=uploaded_file_obj.name)
             
             if uploaded_file_obj.state.name == "FAILED":
                 raise Exception("File processing failed")
@@ -159,9 +158,9 @@ def analyze_pdf(pdf_bytes, prompt, model_name):
             st.info("File uploaded successfully. Generating analysis...")
             
             # Generate content using Gemini with the PDF
-            response = model.generate_content(
-                [prompt, uploaded_file_obj],
-                request_options={"timeout": 600}
+            response = client.models.generate_content(
+                model=model_name,
+                contents=[prompt, uploaded_file_obj]
             )
             
             return response.text
@@ -181,7 +180,8 @@ def analyze_pdf(pdf_bytes, prompt, model_name):
         # Clean up: delete the uploaded file from Gemini
         if uploaded_file_obj:
             try:
-                genai.delete_file(uploaded_file_obj.name)
+                client = genai.Client(api_key=GEMINI_API_KEY)
+                client.files.delete(name=uploaded_file_obj.name)
             except Exception:
                 pass
 
