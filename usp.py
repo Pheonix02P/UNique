@@ -16,47 +16,37 @@ st.title("USP using Gemini")
 GEMINI_API_KEY = "AIzaSyDm3sAZsBlO2UTIsD9oBetBYJrhhXXdipE"
 
 # Set up base prompt
-base_prompt = """You are provided with the attached brochure for a premium residential project. Your task is to extract the unique selling propositions (USPs) that will positively influence potential buyer decisions, keeping in mind the expectations of buyers in this segment.
-
-Focus on the following aspects, aligning with the expectations of a premium homebuyer:
-
-Thematic and Architectural Uniqueness
-
-Facilities and Luxury Amenities
-
-Technology and Security Features
-
-Landscape and Environment
-
-Location Highlights
-
-Awards and Recognition
-
-Any Other Unique Features that enhance lifestyle, convenience, and security
-
-Important Guidelines:
-
-Keep in mind that the attachment may contain noise, so filter out any irrelevant content.
-
-Output the USPs as bullet points, ensuring each bullet point is 20 words or less.
-
-Ensure each point provides factual details about the project based on the information available in the brochure.
-
-If and only if the proper name of an architect, designer, builder, consultant, or developer is explicitly mentioned in the brochure, include it in the USPs. Do not use common nouns such as "designers" or "architect" without the presence of a proper noun.
-
-Arrange the USPs in descending order of uniqueness and appeal, placing the most attractive first.
-
-Give priority to factual details explicitly mentioned in the text, such as clubhouse size, project density, greenery percentage, etc.
-
-Use a professional tone in your bullet points.
-
-Do not include headers in the bullet points.
-
-Ensure grammatical correctness and capitalize the first letters of proper nouns.
-
-Focus on factual information, lifestyle appeal, and renowned names associated with the project.
-
-Convert each point into a 75-character limit, without losing the factual data of the point
+base_prompt = """You are provided with a brochure for a premium residential project priced above Your task is to extract the unique selling propositions (USPs) that will positively influence potential buyer decisions, keeping in mind the expectations of buyers in this segment.
+    Focus on the following aspects, aligning with the expectations of a premium homebuyer:
+    - Thematic and Architectural Uniqueness
+    - Facilities and Luxury Amenities
+    - Technology and Security Features 
+    - Landscape and Environment 
+    - Location Highlights 
+    - Awards and Recognition
+    - Environmental Impact & Open Area
+    - Architectural/Design Features
+    - Exclusive Amenities
+    - Developer Credibility
+    - Construction Quality
+    - Location Advantages
+    - Safety and Security
+    - Lifestyle & Community
+    - Technology Integration
+    - Investment Potential
+    - Any Other Unique Features that enhance lifestyle, convenience, and security.
+    NOTE:
+    •   Output the USPs as bullet points, ensuring each bullet point is 20 words or less.
+    •   Ensure each point provides factual details about the project based on the information available in the brochure.
+    •   *Important : If and only if the proper name of an architect, designer, builder, consultant, or developer is explicitly mentioned in the brochure, include it in the USPs, Do not use common nouns such as designers or architect without the presence of a proper noun*
+    •   Arrange them in descending order, with the most unique and attractive USP at the top.
+    •   Give priority to factual details explicitly mentioned in the text, such as: name of the architect, size of the clubhouse, project density, and greenery.
+    •   Use a professional tone in your bullet points.
+    •   Do not include headers in the bullet points.
+    •   Ensure grammatical correctness and capitalize the first letters of proper nouns.
+    •   Focus on: (factual information, lifestyle appeal, and renowned names associated with the project).
+    •   Make sure to return a minimum of 5 USPs and a maximum of 7 USPs
+    •   Do not start a USP with "-" or end with "."
 
 """
 
@@ -264,4 +254,5 @@ if pdf_bytes:
 
 # Footer
 st.divider()
+
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
