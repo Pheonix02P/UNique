@@ -127,21 +127,33 @@ def analyze_pdf_with_genai(pdf_bytes: bytes, prompt: str, model_id: str) -> str 
         # Upload file (new API — no mime_type argument)
         uploaded_file = client.files.upload(file=tmp_path)
 
-        # Prepare parts: text + file
+        # Build contents: first the prompt (string), then a small dict referencing the uploaded file
         contents = [
-            types.Part.from_text(prompt),
-            types.Part.from_uri(uploaded_file.uri)  # ✅ new SDK style
+            prompt,
+            {"uri": uploaded_file.uri}
         ]
 
-        # Generate response
+        # Call the model
         response = client.models.generate_content(
             model=model_id,
             contents=contents
         )
 
-        # Cleanup
-        os.unlink(tmp_path)
-        return response.text
+        # Clean up temp file
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+        # Many SDK responses expose .text — fall back to extracting textual parts if needed
+        if hasattr(response, "text") and response.text:
+            return response.text
+        # fallback attempt to read structured output
+        try:
+            # adapt depending on response structure
+            return response.output[0].content[0].text
+        except Exception:
+            return str(response)
 
     except Exception as e:
         st.error(f"GenAI error: {e}")
@@ -196,5 +208,6 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer — Powered by Google Gemini / GenAI")
+
 
 
