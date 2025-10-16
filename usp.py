@@ -16,37 +16,82 @@ st.title("USP using Gemini")
 GEMINI_API_KEY = "AIzaSyDm3sAZsBlO2UTIsD9oBetBYJrhhXXdipE"
 
 # Set up base prompt
-base_prompt = """You are provided with a brochure for a premium residential project. Your task is to extract the unique selling propositions (USPs) that will positively influence potential buyer decisions, keeping in mind the expectations of buyers in this segment.
-    Focus on the following aspects, aligning with the expectations of a premium homebuyer:
-    - Thematic and Architectural Uniqueness
-    - Facilities and Luxury Amenities
-    - Technology and Security Features 
-    - Landscape and Environment 
-    - Location Highlights 
-    - Awards and Recognition
-    - Environmental Impact & Open Area
-    - Architectural/Design Features
-    - Exclusive Amenities
-    - Developer Credibility
-    - Construction Quality
-    - Location Advantages
-    - Safety and Security
-    - Lifestyle & Community
-    - Technology Integration
-    - Investment Potential
-    - Any Other Unique Features that enhance lifestyle, convenience, and security.
-    NOTE:
-    •   Ensure each point provides factual details about the project based on the information available in the brochure.
-    •   *Important : If and only if the proper name of an architect, designer, builder, consultant, or developer is explicitly mentioned in the brochure, include it in the USPs, Do not use common nouns such as designers or architect without the presence of a proper noun*
-    •   Arrange them in descending order, with the most unique and attractive USP at the top.
-    •   Give priority to factual details explicitly mentioned in the text, such as: name of the architect, size of the clubhouse, project density, and greenery.
-    •   Use a professional tone in your bullet points.
-    •   Do not include headers in the bullet points.
-    •   Ensure grammatical correctness and capitalize the first letters of proper nouns.
-    •   Focus on: (factual information, lifestyle appeal, and renowned names associated with the project).
-    •   Make sure to return a minimum of 5 USPs and a maximum of 7 USPs
-    •   Do not start a USP with "-" or end with "."
-    •   VERY IMPORTANT: make sure each USP is not more than maximum of 75 characters 
+base_prompt = """You are provided with the attached brochure for a premium residential project. Your task is to extract the unique selling propositions (USPs) that will positively influence potential buyer decisions, keeping in mind the expectations of buyers in this segment.
+
+Focus on the following aspects, aligning with the expectations of a premium homebuyer:
+
+Thematic and Architectural Uniqueness
+
+Facilities and Luxury Amenities
+
+Technology and Security Features
+
+Landscape and Environment
+
+Location Highlights
+
+Awards and Recognition
+
+Any Other Unique Features that enhance lifestyle, convenience, and security
+
+Important Guidelines:
+
+Keep in mind that the attachment may contain noise, so filter out any irrelevant content.
+
+Output the USPs as bullet points, ensuring each bullet point is 20 words or less.
+
+Ensure each point provides factual details about the project based on the information available in the brochure.
+
+If and only if the proper name of an architect, designer, builder, consultant, or developer is explicitly mentioned in the brochure, include it in the USPs. Do not use common nouns such as "designers" or "architect" without the presence of a proper noun.
+
+Arrange the USPs in descending order of uniqueness and appeal, placing the most attractive first.
+
+Give priority to factual details explicitly mentioned in the text, such as clubhouse size, project density, greenery percentage, etc.
+
+Use a professional tone in your bullet points.
+
+Do not include headers in the bullet points.
+
+Ensure grammatical correctness and capitalize the first letters of proper nouns.
+
+Focus on factual information, lifestyle appeal, and renowned names associated with the project.
+
+Convert each point into a 75-character limit, without losing the factual data of the point
+
+CATEGORIZATION REQUIREMENTS:
+
+For each USP, do the following:
+
+1. Assign a category:
+   - Choose exactly one from this fixed list (no additions or changes allowed):
+     AMENITIES, LOCATION_AND_CONNECTIVITY, CONSTRUCTION_AND_DESIGN,
+     TECHNOLOGY_AND_AUTOMATION, OFFERS, CERTIFICATES_AND_APPROVALS,
+     AWARDS_AND_ACCOLADES, MASTER_PLAN.
+
+2. Select a sub-category:
+
+   - If category is **AMENITIES**, pick exactly one sub-category only from this fixed list (no additions or changes allowed):
+     ROOFTOP_LOUNGE, CHESS, VISITORS_PARKING, SAUNA, MULTIPURPOSE_COURT, ARTS_AND_CRAFTS_STUDIO, MUSIC_ROOM, THEME_PARK, AYURVEDIC_CENTRE, MASSAGE_ROOM, SALON, AIR_HOCKEY, GYMNASIUM, FOOSBALL, RESTAURANT, SWIMMING_POOL, CAFETERIA, LIBRARY, CARD_ROOM, CO_WORKING_SPACES, COMMUNITY_GARDEN_URBAN_FARMING, CLUB_HOUSE, BUSINESS_LOUNGE, CRICKET_PITCH, STEAM_ROOM, TOT_LOT, AMPHITHEATRE, ESCALATOR, REFLEXOLOGY_PARK, JOGGING_TRACK, CARROM, GREEN_WALL, WATER_PARK_SLIDES, INDOOR_GAMES, TABLE_TENNIS, FOOTBALL, SCHOOL, YOGA_MEDITATION_AREA, FOOD_COURT, BADMINTON_COURT, MEDICAL_CENTRE, CIGAR_LOUNGE, CLINIC, FLOWER_GARDEN, SQUASH_COURT, BILLIARDS, CAR_WASH_AREA, GAZEBO, PARKING, LANDSCAPE_GARDEN, TEMPLE, BARBEQUE, CYCLING_TRACK, CRECHE, LIFT, THEATER_HOME, SENIOR_CITIZEN_SITOUT, AEROBICS_CENTRE, AUTOMATED_CAR_WASH, BANQUET_HALL, SAND_PIT, PEDESTRIAN_FRIENDLY_ZONES, MULTIPURPOSE_HALL, EXTERIOR_LANDSCAPE, CAR_PARKING, GAMING_ZONES, PRIVATE_GARDENS_BALCONIES, MINI_THEATRE, GROCERY_SHOP, TERRACE_GARDEN, ARCHERY_RANGE, GOLF_COURSE, ATM, SKATING_RINK, BASKETBALL_COURT, NATURE_TRAIL, SHOPPING_CENTRE, PERGOLA, POOL_TABLE, PAVED_COMPOUND, LOUNGE, TODDLER_POOL, COMMUNITY_HALL, PARTY_LAWN, READING_LOUNGE, FOUNTAIN, JACUZZI, POWER_SUBSTATION, CENTRALIZED_AIR_CONDITIONING, SIT_OUT_AREA, CHILDRENS_PLAY_AREA, LAWN_TENNIS_COURT, SPA, BAR_CHILL_OUT_LOUNGE, INTERNAL_ROAD, THEATRE, BOWLING_ALLEY, MANICURED_GARDEN, ACUPRESSURE_PARK, CONFERENCE_ROOM, FOREST_TRAIL, BEACH_VOLLEY_BALL_COURT, INFINITY_POOL, ACCUPRESSURE_PARK, OPEN_SPACE, DANCE_STUDIO, SUN_DECK, NATURAL_POND, ROCK_CLIMBING_WALL, DART_BOARD, EV_CHARGING_STATIONS.
+     
+     - If no suitable sub-category is found, do **not** assign AMENITIES as the category and do **not** generate a custom subcategory.
+
+   - If category is **LOCATION_AND_CONNECTIVITY**, pick exactly one sub-category only from this fixed list (no additions or changes allowed):
+     BUS, ELECTRICITY, BEACH, PETROL_PUMP, COLLEGE, AIRPORT, MARKETS, METRO, STADIUM, HOSPITALITY, GREEN_BELT, PARK, WATER, GOLF_COURSE, ATM, HERITAGE_PLACES, BANK, MULTI_LEVEL_PARKING, RAILWAY, AMUSEMENT_PARK, HIGHWAY, HOSPITAL, FLYOVER, MALLS, SCHOOL, MAJOR_ROAD, BUSINESS_HUB, PUBLIC_TRANSPORTATION.
+     
+     - If no suitable sub-category is found, do **not** assign LOCATION_AND_CONNECTIVITY as the category and do **not** generate a custom subcategory.
+
+   - For all other categories:
+     - Create a custom sub-category (not from any predefined list), in **Title Case Format**.
+     - This custom sub-category must not duplicate any predefined category or sub-category.
+
+OUTPUT FORMAT:
+
+Present each USP in the following format:
+[Category] | [Sub-Category] | [USP Text within 75 characters]
+
+Example:
+AMENITIES | SWIMMING_POOL | Olympic-size pool with cabanas and kids' splash zone
+CONSTRUCTION_AND_DESIGN | Sustainable Materials | LEED Gold certified with eco-friendly construction materials
 
 """
 
@@ -198,7 +243,7 @@ if pdf_bytes:
         # Display the first page as a preview
         preview_image = render_pdf_preview(pdf_bytes)
         if preview_image:
-            st.image(preview_image, caption="First page preview", use_container_width=True)
+            st.image(preview_image, caption="First page preview", width='content')
         else:
             st.warning("Could not generate preview for this PDF")
     
@@ -239,7 +284,34 @@ if pdf_bytes:
             if analysis:
                 # Clear placeholder and show result
                 result_placeholder.empty()
-                st.markdown(analysis)
+                
+                # Parse and display USPs in a formatted way
+                usps = analysis.strip().split('\n')
+                
+                st.subheader("Extracted USPs")
+                
+                # Display each USP in a more readable format
+                for i, usp in enumerate(usps, 1):
+                    if usp.strip():
+                        # Split by pipe character
+                        parts = usp.split('|')
+                        if len(parts) == 3:
+                            category = parts[0].strip()
+                            subcategory = parts[1].strip()
+                            text = parts[2].strip()
+                            
+                            # Display with better formatting
+                            col_a, col_b = st.columns([1, 3])
+                            with col_a:
+                                st.markdown(f"**{category}**")
+                                st.caption(subcategory)
+                            with col_b:
+                                st.markdown(f"• {text}")
+                            st.divider()
+                        else:
+                            # Fallback for non-formatted lines
+                            st.markdown(f"• {usp}")
+                
                 st.caption(f"Analysis completed in {execution_time:.1f} seconds using {selected_model_name}")
                 
                 # Option to download results
@@ -254,9 +326,4 @@ if pdf_bytes:
 
 # Footer
 st.divider()
-
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
-
-
-
-
