@@ -13,7 +13,7 @@ st.set_page_config(page_title="Premium Property USP Analyzer", layout="wide")
 st.title("USP using Gemini")
 
 # Initialize API key
-GEMINI_API_KEY = "AIzaSyDm3sAZsBlO2UTIsD9oBetBYJrhhXXdipE"
+GEMINI_API_KEY = ""
 
 # Set up base prompt
 base_prompt = """You are provided with the attached brochure for a premium residential project. Your task is to extract the unique selling propositions (USPs) that will positively influence potential buyer decisions, keeping in mind the expectations of buyers in this segment.
@@ -172,6 +172,35 @@ def analyze_pdf(pdf_bytes, prompt, model_name, client):
             # Upload the PDF file using the new SDK method
             uploaded_file = client.files.upload(file=temp_file.name)
             
+            # Wait for the file to be processed and reach ACTIVE state
+            st.info(f"File uploaded. Waiting for processing... (File ID: {uploaded_file.name})")
+            max_wait_time = 120  # Maximum wait time in seconds
+            wait_interval = 2  # Check every 2 seconds
+            elapsed_time = 0
+            
+            while elapsed_time < max_wait_time:
+                # Get the current file status
+                file_status = client.files.get(name=uploaded_file.name)
+                
+                if file_status.state.name == "ACTIVE":
+                    st.success("File is ready for processing!")
+                    break
+                elif file_status.state.name == "FAILED":
+                    st.error("File processing failed on Gemini's end.")
+                    return None
+                
+                # Wait before checking again
+                time.sleep(wait_interval)
+                elapsed_time += wait_interval
+                
+                # Show progress to user
+                if elapsed_time % 10 == 0:
+                    st.info(f"Still processing... ({elapsed_time}s elapsed)")
+            
+            if elapsed_time >= max_wait_time:
+                st.error("Timeout: File did not become active within the expected time.")
+                return None
+            
             # Generate content using the new SDK
             result = client.models.generate_content(
                 model=model_name,
@@ -182,6 +211,12 @@ def analyze_pdf(pdf_bytes, prompt, model_name, client):
             try:
                 if os.path.exists(temp_file.name):
                     os.unlink(temp_file.name)
+            except Exception as e:
+                pass
+            
+            # Optionally delete the file from Gemini's servers
+            try:
+                client.files.delete(name=uploaded_file.name)
             except Exception as e:
                 pass
             
