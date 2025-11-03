@@ -95,6 +95,7 @@ CONSTRUCTION_AND_DESIGN | Sustainable Materials | LEED Gold certified with eco-f
 
 """
 
+
 # Additional prompt for when old USPs are provided
 old_usps_prompt = """
 Additionally, I'm providing you with a list of previously identified USPs for this or a similar property. Review these old USPs and consider them alongside the brochure contents.
@@ -362,4 +363,5 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
 
