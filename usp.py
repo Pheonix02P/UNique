@@ -13,7 +13,7 @@ st.set_page_config(page_title="Premium Property USP Analyzer", layout="wide")
 st.title("USP using Gemini")
 
 # Initialize API key
-GEMINI_API_KEY = "AIzaSyDm3sAZsBlO2UTIsD9oBetBYJrhhXXdipE"
+GEMINI_API_KEY = "AIzaSyCNVUHzuboKQIDBzT-BiOBSBYyVyqJbO7g"
 
 # Set up base prompt
 base_prompt = """You are provided with the attached brochure for a premium residential project. Your task is to extract the unique selling propositions (USPs) that will positively influence potential buyer decisions, keeping in mind the expectations of buyers in this segment.
@@ -112,7 +112,7 @@ st.write("Upload Brochure or Enter URL and (Optionally) Enter Old USPs")
 # Model selection dropdown
 st.subheader("Select Gemini Model")
 model_options = {
-    "Gemini 2.0 Flash": "gemini-2.0-flash",
+    "Gemini Flash Latest": "gemini-flash-latest",
     "Gemini 2.5 Flash": "gemini-2.5-flash"
 }
 selected_model_name = st.selectbox(
@@ -363,5 +363,6 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
 
 
