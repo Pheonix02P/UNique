@@ -147,47 +147,72 @@ def setup_gemini_client():
         return None
 
 def download_pdf_from_url(url):
-    """Download a PDF from a URL with better error handling"""
+    """Download a PDF from a URL with enhanced browser simulation"""
     try:
-        # Add headers to mimic a browser request
+        # Add comprehensive headers to mimic a real browser request
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Cache-Control': 'max-age=0',
+            'Referer': 'https://www.99acres.com/'
         }
         
-        # Add timeout to prevent hanging
-        response = requests.get(url, stream=True, headers=headers, timeout=30)
-        response.raise_for_status()  # Raise an error for bad responses
+        # Create a session to maintain cookies
+        session = requests.Session()
+        session.headers.update(headers)
+        
+        # Add timeout and allow redirects
+        response = session.get(url, stream=True, timeout=30, allow_redirects=True, verify=True)
+        response.raise_for_status()
         
         # Check if the content is actually a PDF
         content_type = response.headers.get('Content-Type', '')
-        if 'application/pdf' not in content_type and not url.lower().endswith('.pdf'):
-            st.error(f"The URL does not point to a valid PDF file. Content-Type: {content_type}")
-            return None
         
-        # Return the content as bytes
-        return response.content
+        # More lenient PDF check
+        if 'pdf' in content_type.lower() or url.lower().endswith('.pdf'):
+            return response.content
+        else:
+            st.warning(f"⚠️ Content-Type is '{content_type}'. Attempting download anyway...")
+            # Try to download anyway if URL ends with .pdf
+            if url.lower().endswith('.pdf'):
+                return response.content
+            else:
+                st.error(f"❌ The URL does not appear to point to a PDF file. Content-Type: {content_type}")
+                return None
         
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 404:
-            st.error("❌ PDF not found (404). Please check if the URL is correct and the file still exists.")
+            st.error("❌ PDF not found (404). The file may have been moved or deleted.")
+            st.info("💡 Try copying the URL again from your browser's address bar.")
         elif e.response.status_code == 403:
-            st.error("❌ Access forbidden (403). The server is blocking access to this PDF.")
+            st.error("❌ Access forbidden (403). The server is blocking automated access.")
+            st.info("💡 Try downloading the PDF manually and uploading it instead.")
         elif e.response.status_code == 500:
-            st.error("❌ Server error (500). The website is experiencing issues.")
+            st.error("❌ Server error (500). The website is experiencing issues. Try again later.")
         else:
             st.error(f"❌ HTTP Error {e.response.status_code}: {str(e)}")
         return None
         
     except requests.exceptions.Timeout:
         st.error("❌ Request timed out. The server took too long to respond.")
+        st.info("💡 Try again or check your internet connection.")
         return None
         
     except requests.exceptions.ConnectionError:
-        st.error("❌ Connection error. Please check your internet connection or verify the URL.")
+        st.error("❌ Connection error. Please check your internet connection.")
         return None
         
     except requests.exceptions.RequestException as e:
         st.error(f"❌ Error downloading PDF: {str(e)}")
+        st.info("💡 If the URL works in your browser, try downloading and uploading the file instead.")
         return None
        
 def analyze_pdf(pdf_bytes, prompt, model_name, client):
@@ -392,6 +417,7 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
 
 
 
