@@ -147,9 +147,15 @@ def setup_gemini_client():
         return None
 
 def download_pdf_from_url(url):
-    """Download a PDF from a URL"""
+    """Download a PDF from a URL with better error handling"""
     try:
-        response = requests.get(url, stream=True)
+        # Add headers to mimic a browser request
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        # Add timeout to prevent hanging
+        response = requests.get(url, stream=True, headers=headers, timeout=30)
         response.raise_for_status()  # Raise an error for bad responses
         
         # Check if the content is actually a PDF
@@ -160,8 +166,28 @@ def download_pdf_from_url(url):
         
         # Return the content as bytes
         return response.content
+        
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            st.error("❌ PDF not found (404). Please check if the URL is correct and the file still exists.")
+        elif e.response.status_code == 403:
+            st.error("❌ Access forbidden (403). The server is blocking access to this PDF.")
+        elif e.response.status_code == 500:
+            st.error("❌ Server error (500). The website is experiencing issues.")
+        else:
+            st.error(f"❌ HTTP Error {e.response.status_code}: {str(e)}")
+        return None
+        
+    except requests.exceptions.Timeout:
+        st.error("❌ Request timed out. The server took too long to respond.")
+        return None
+        
+    except requests.exceptions.ConnectionError:
+        st.error("❌ Connection error. Please check your internet connection or verify the URL.")
+        return None
+        
     except requests.exceptions.RequestException as e:
-        st.error(f"Error downloading PDF: {str(e)}")
+        st.error(f"❌ Error downloading PDF: {str(e)}")
         return None
        
 def analyze_pdf(pdf_bytes, prompt, model_name, client):
@@ -366,6 +392,7 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
 
 
 
