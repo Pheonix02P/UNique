@@ -147,114 +147,21 @@ def setup_gemini_client():
         return None
 
 def download_pdf_from_url(url):
-    """Download a PDF from a URL with enhanced browser simulation and debugging"""
+    """Download a PDF from a URL"""
     try:
-        # Clean the URL
-        url = url.strip()
-        
-        # Add comprehensive headers to mimic a real browser request
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Fetch-User': '?1',
-            'Cache-Control': 'max-age=0',
-            'Referer': 'https://www.99acres.com/'
-        }
-        
-        # Show debug info
-        with st.expander("🔍 Debug Information", expanded=False):
-            st.code(f"Attempting to download:\n{url}", language="text")
-        
-        # Create a session to maintain cookies
-        session = requests.Session()
-        session.headers.update(headers)
-        
-        # First, try a HEAD request to check if URL is accessible
-        try:
-            head_response = session.head(url, timeout=10, allow_redirects=True)
-            with st.expander("🔍 Debug Information", expanded=False):
-                st.write(f"**HEAD Request Status:** {head_response.status_code}")
-                st.write(f"**Final URL after redirects:** {head_response.url}")
-                st.write(f"**Content-Type:** {head_response.headers.get('Content-Type', 'Not specified')}")
-        except Exception as e:
-            st.warning(f"HEAD request failed: {str(e)}")
-        
-        # Add timeout and allow redirects
-        response = session.get(url, stream=True, timeout=30, allow_redirects=True, verify=True)
-        
-        # Debug: Show response details
-        with st.expander("🔍 Debug Information", expanded=False):
-            st.write(f"**GET Request Status:** {response.status_code}")
-            st.write(f"**Final URL:** {response.url}")
-            st.write(f"**Content-Type:** {response.headers.get('Content-Type', 'Not specified')}")
-            st.write(f"**Content-Length:** {response.headers.get('Content-Length', 'Not specified')}")
-        
-        response.raise_for_status()
+        response = requests.get(url, stream=True)
+        response.raise_for_status()  # Raise an error for bad responses
         
         # Check if the content is actually a PDF
         content_type = response.headers.get('Content-Type', '')
+        if 'application/pdf' not in content_type and not url.lower().endswith('.pdf'):
+            st.error(f"The URL does not point to a valid PDF file. Content-Type: {content_type}")
+            return None
         
-        # More lenient PDF check
-        if 'pdf' in content_type.lower() or url.lower().endswith('.pdf'):
-            content = response.content
-            
-            # Verify it's actually PDF content by checking magic bytes
-            if content[:4] == b'%PDF':
-                st.success("✅ Valid PDF downloaded successfully!")
-                return content
-            else:
-                st.warning("⚠️ Downloaded content doesn't appear to be a valid PDF")
-                # Try to download anyway
-                return content
-        else:
-            st.warning(f"⚠️ Content-Type is '{content_type}'. Attempting download anyway...")
-            # Try to download anyway if URL ends with .pdf
-            if url.lower().endswith('.pdf'):
-                return response.content
-            else:
-                st.error(f"❌ The URL does not appear to point to a PDF file. Content-Type: {content_type}")
-                return None
-        
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 404:
-            st.error("❌ PDF not found (404). The file may have been moved or deleted.")
-            st.info("💡 **Possible solutions:**")
-            st.markdown("""
-            - The URL might be session-based or time-limited. Try:
-              1. Open the PDF in Chrome
-              2. Wait for it to fully load
-              3. Use Chrome DevTools (F12) → Network tab → Find the PDF request
-              4. Right-click on the PDF request → Copy → Copy URL
-            - Or simply download the PDF and upload it using the file uploader
-            """)
-        elif e.response.status_code == 403:
-            st.error("❌ Access forbidden (403). The server is blocking automated access.")
-            st.info("💡 This URL requires browser cookies/session. Please download the PDF manually and upload it.")
-        elif e.response.status_code == 500:
-            st.error("❌ Server error (500). The website is experiencing issues. Try again later.")
-        else:
-            st.error(f"❌ HTTP Error {e.response.status_code}: {str(e)}")
-        return None
-        
-    except requests.exceptions.Timeout:
-        st.error("❌ Request timed out. The server took too long to respond.")
-        st.info("💡 Try again or check your internet connection.")
-        return None
-        
-    except requests.exceptions.ConnectionError:
-        st.error("❌ Connection error. Please check your internet connection.")
-        return None
-        
+        # Return the content as bytes
+        return response.content
     except requests.exceptions.RequestException as e:
-        st.error(f"❌ Error downloading PDF: {str(e)}")
-        st.info("💡 If the URL works in your browser, try downloading and uploading the file instead.")
+        st.error(f"Error downloading PDF: {str(e)}")
         return None
        
 def analyze_pdf(pdf_bytes, prompt, model_name, client):
@@ -459,6 +366,7 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
 
 
 
