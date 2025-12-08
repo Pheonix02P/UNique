@@ -147,21 +147,45 @@ def setup_gemini_client():
         return None
 
 def download_pdf_from_url(url):
-    """Download a PDF from a URL"""
+    """Download a PDF from a URL with proper headers and validation."""
     try:
-        response = requests.get(url, stream=True)
-        response.raise_for_status()  # Raise an error for bad responses
-        
-        # Check if the content is actually a PDF
-        content_type = response.headers.get('Content-Type', '')
-        if 'application/pdf' not in content_type and not url.lower().endswith('.pdf'):
-            st.error(f"The URL does not point to a valid PDF file. Content-Type: {content_type}")
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+            "Accept": "application/pdf,application/octet-stream,*/*",
+            "Referer": url  # Helps when servers block direct access
+        }
+
+        response = requests.get(url, stream=True, headers=headers, timeout=15)
+
+        # Check HTTP status
+        if response.status_code == 404:
+            st.error("❌ File not found (404). The link may be expired or incorrect.")
             return None
         
-        # Return the content as bytes
+        response.raise_for_status()
+
+        # Try detecting content type
+        content_type = response.headers.get("Content-Type", "").lower()
+
+        # Validate PDF based on content-type or file extension
+        if "pdf" not in content_type and not url.lower().endswith(".pdf"):
+            st.warning(f"⚠ The server did not send a PDF Content-Type. "
+                       f"Received: {content_type}. Attempting to process anyway...")
+
+        # Return content
         return response.content
+
+    except requests.exceptions.Timeout:
+        st.error("⏳ Request timed out. The server may be slow or unavailable.")
+        return None
+
+    except requests.exceptions.ConnectionError:
+        st.error("📡 Connection error. Check your internet or the URL.")
+        return None
+
     except requests.exceptions.RequestException as e:
-        st.error(f"Error downloading PDF: {str(e)}")
+        st.error(f"⚠ Error downloading PDF: {str(e)}")
         return None
 
 def analyze_pdf(pdf_bytes, prompt, model_name, client):
@@ -366,6 +390,7 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
 
 
 
