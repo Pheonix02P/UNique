@@ -115,8 +115,7 @@ st.write("Upload Brochure or Enter URL and (Optionally) Enter Old USPs")
 # Model selection dropdown
 st.subheader("Select Gemini Model")
 model_options = {
-    "Gemini 3": "gemini-3-flash-preview",
-    "Gemini 2.5 Flash": "gemini-2.5-flash"
+    "Gemini 2.5 Flash": "gemini-2.5-flash",
 }
 selected_model_name = st.selectbox(
     "Choose the AI model for analysis/Switch Models while facing any issue or errors",
@@ -178,12 +177,11 @@ def analyze_pdf(pdf_bytes, prompt, model_name, client):
             
             # Wait for the file to be processed and reach ACTIVE state
             st.info(f"File uploaded. Waiting for processing... (File ID: {uploaded_file.name})")
-            max_wait_time = 120  # Maximum wait time in seconds
-            wait_interval = 2  # Check every 2 seconds
+            max_wait_time = 120
+            wait_interval = 2
             elapsed_time = 0
             
             while elapsed_time < max_wait_time:
-                # Get the current file status
                 file_status = client.files.get(name=uploaded_file.name)
                 
                 if file_status.state.name == "ACTIVE":
@@ -193,11 +191,9 @@ def analyze_pdf(pdf_bytes, prompt, model_name, client):
                     st.error("File processing failed on Gemini's end.")
                     return None
                 
-                # Wait before checking again
                 time.sleep(wait_interval)
                 elapsed_time += wait_interval
                 
-                # Show progress to user
                 if elapsed_time % 10 == 0:
                     st.info(f"Still processing... ({elapsed_time}s elapsed)")
             
@@ -205,14 +201,21 @@ def analyze_pdf(pdf_bytes, prompt, model_name, client):
                 st.error("Timeout: File did not become active within the expected time.")
                 return None
             
-            # Generate content using the correct format
-            # The key fix: use the file's URI in a Part object
+            # CRITICAL FIX: Use the correct content structure
+            # Create a proper message with parts
             result = client.models.generate_content(
                 model=model_name,
-                contents=[
-                    prompt,
-                    uploaded_file  # Pass the file object directly
-                ]
+                contents={
+                    "parts": [
+                        {"text": prompt},
+                        {
+                            "file_data": {
+                                "mime_type": uploaded_file.mime_type,
+                                "file_uri": uploaded_file.uri
+                            }
+                        }
+                    ]
+                }
             )
             
             # Clean up the temporary file
@@ -233,7 +236,6 @@ def analyze_pdf(pdf_bytes, prompt, model_name, client):
 
     except Exception as e:
         st.error(f"Error generating content with Gemini: {str(e)}")
-        # Add more detailed error information
         import traceback
         st.error(f"Traceback: {traceback.format_exc()}")
         return None
@@ -373,6 +375,7 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
 
 
 
