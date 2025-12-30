@@ -8,7 +8,7 @@ import io
 from PIL import Image
 import requests
 
-# Page configuration
+# Page configurationg
 st.set_page_config(page_title="Premium Property USP Analyzer", layout="wide")
 st.title("USP using Gemini")
 
@@ -366,6 +366,7 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
 
 
 
