@@ -208,7 +208,15 @@ def analyze_pdf(pdf_bytes, prompt, model_name, client):
             # Generate content using the new SDK
             result = client.models.generate_content(
                 model=model_name,
-                contents=[uploaded_file, prompt]
+                contents=[
+                    {
+                        "role": "user",
+                        "parts": [
+                            {"file_data": {"file_uri": uploaded_file.uri}},
+                            {"text": prompt}
+                        ]
+                    }
+                ]
             )
             
             # Clean up the temporary file
@@ -366,6 +374,7 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
 
 
 
