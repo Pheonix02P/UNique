@@ -205,17 +205,13 @@ def analyze_pdf(pdf_bytes, prompt, model_name, client):
                 st.error("Timeout: File did not become active within the expected time.")
                 return None
             
-            # Generate content using the new SDK
+            # Generate content using the correct format
+            # The key fix: use the file's URI in a Part object
             result = client.models.generate_content(
                 model=model_name,
                 contents=[
-                    {
-                        "role": "user",
-                        "parts": [
-                            {"file_data": {"file_uri": uploaded_file.uri}},
-                            {"text": prompt}
-                        ]
-                    }
+                    prompt,
+                    uploaded_file  # Pass the file object directly
                 ]
             )
             
@@ -237,8 +233,11 @@ def analyze_pdf(pdf_bytes, prompt, model_name, client):
 
     except Exception as e:
         st.error(f"Error generating content with Gemini: {str(e)}")
+        # Add more detailed error information
+        import traceback
+        st.error(f"Traceback: {traceback.format_exc()}")
         return None
-
+       
 def render_pdf_preview(pdf_bytes):
     """Render the first page of a PDF as an image for preview"""
     try:
@@ -374,6 +373,7 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
 
 
 
