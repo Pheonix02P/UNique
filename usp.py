@@ -202,20 +202,23 @@ def analyze_pdf(pdf_bytes, prompt, model_name, client):
                 return None
             
             # CRITICAL FIX: Use the correct content structure
-            # Create a proper message with parts
+            # Create a proper message with part
             result = client.models.generate_content(
                 model=model_name,
-                contents={
-                    "parts": [
-                        {"text": prompt},
-                        {
-                            "file_data": {
-                                "mime_type": uploaded_file.mime_type,
-                                "file_uri": uploaded_file.uri
-                            }
-                        }
-                    ]
-                }
+                contents=[
+                    types.Content(
+                        role="user",
+                        parts=[
+                            types.Part(text=prompt),
+                            types.Part(
+                                file_data=types.FileData(
+                                    mime_type=file_status.mime_type,  # use file_status (active file object)
+                                    file_uri=file_status.uri
+                                )
+                            )
+                        ]
+                    )
+                ]
             )
             
             # Clean up the temporary file
@@ -375,6 +378,7 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
 
 
 
