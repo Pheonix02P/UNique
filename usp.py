@@ -9,7 +9,7 @@ import io
 from PIL import Image
 import requests
 
-# Page configurationg
+# Page configuration
 st.set_page_config(page_title="Premium Property USP Analyzer", layout="wide")
 st.title("USP using Gemini")
 
@@ -19,6 +19,7 @@ try:
 except KeyError:
    st.error("Key not found")
    st.stop()
+
 # Set up base prompt
 base_prompt = """You are provided with the attached brochure for a premium residential project. Your task is to extract the unique selling propositions (USPs) that will positively influence potential buyer decisions, keeping in mind the expectations of buyers in this segment.
 
@@ -99,7 +100,6 @@ CONSTRUCTION_AND_DESIGN | Sustainable Materials | LEED Gold certified with eco-f
 
 """
 
-
 # Additional prompt for when old USPs are provided
 old_usps_prompt = """
 Additionally, I'm providing you with a list of previously identified USPs for this or a similar property. Review these old USPs and consider them alongside the brochure contents.
@@ -116,13 +116,13 @@ st.write("Upload Brochure or Enter URL and (Optionally) Enter Old USPs")
 # Model selection dropdown
 st.subheader("Select Gemini Model")
 model_options = {
-    "Gemini3": "gemini-3-flash-preview",
+    "Gemini 3 Flash Preview": "gemini-3-flash-preview",
 }
 selected_model_name = st.selectbox(
     "Choose the AI model for analysis/Switch Models while facing any issue or errors",
     options=list(model_options.keys()),
     index=0,
-    help="Gemini 2.0 Flash is faster and cost-effective."
+    help="Gemini 3 Flash Preview"
 )
 selected_model = model_options[selected_model_name]
 
@@ -150,20 +150,18 @@ def download_pdf_from_url(url):
     """Download a PDF from a URL"""
     try:
         response = requests.get(url, stream=True)
-        response.raise_for_status()  # Raise an error for bad responses
+        response.raise_for_status()
         
-        # Check if the content is actually a PDF
         content_type = response.headers.get('Content-Type', '')
         if 'application/pdf' not in content_type and not url.lower().endswith('.pdf'):
             st.error(f"The URL does not point to a valid PDF file. Content-Type: {content_type}")
             return None
         
-        # Return the content as bytes
         return response.content
     except requests.exceptions.RequestException as e:
         st.error(f"Error downloading PDF: {str(e)}")
         return None
-       
+
 def analyze_pdf(pdf_bytes, prompt, model_name, client):
     """Analyze PDF directly with Gemini using the new SDK"""
     try:
@@ -173,17 +171,18 @@ def analyze_pdf(pdf_bytes, prompt, model_name, client):
             temp_file.write(pdf_bytes)
             temp_file.close()
             
-            # Upload the PDF file using the new SDK method
-            uploaded_file = client.files.upload(file=temp_file.name)
+            # Upload the PDF file
+            uploaded_gemini_file = client.files.upload(file=temp_file.name)
             
             # Wait for the file to be processed and reach ACTIVE state
-            st.info(f"File uploaded. Waiting for processing... (File ID: {uploaded_file.name})")
+            st.info(f"File uploaded. Waiting for processing... (File ID: {uploaded_gemini_file.name})")
             max_wait_time = 120
             wait_interval = 2
             elapsed_time = 0
             
+            file_status = None
             while elapsed_time < max_wait_time:
-                file_status = client.files.get(name=uploaded_file.name)
+                file_status = client.files.get(name=uploaded_gemini_file.name)
                 
                 if file_status.state.name == "ACTIVE":
                     st.success("File is ready for processing!")
@@ -198,27 +197,22 @@ def analyze_pdf(pdf_bytes, prompt, model_name, client):
                 if elapsed_time % 10 == 0:
                     st.info(f"Still processing... ({elapsed_time}s elapsed)")
             
-            if elapsed_time >= max_wait_time:
+            if elapsed_time >= max_wait_time or file_status is None:
                 st.error("Timeout: File did not become active within the expected time.")
                 return None
-            
-            # CRITICAL FIX: Use the correct content structure
-            # Create a proper message with part
+
+            # Debug info
+            st.write(f"DEBUG - URI: {file_status.uri}, MIME: {file_status.mime_type}, State: {file_status.state.name}")
+
+            # Generate content using file URI
             result = client.models.generate_content(
                 model=model_name,
                 contents=[
-                    types.Content(
-                        role="user",
-                        parts=[
-                            types.Part(text=prompt),
-                            types.Part(
-                                file_data=types.FileData(
-                                    mime_type=file_status.mime_type,  # use file_status (active file object)
-                                    file_uri=file_status.uri
-                                )
-                            )
-                        ]
-                    )
+                    types.Part.from_uri(
+                        file_uri=file_status.uri,
+                        mime_type=file_status.mime_type
+                    ),
+                    types.Part.from_text(prompt)
                 ]
             )
             
@@ -226,16 +220,15 @@ def analyze_pdf(pdf_bytes, prompt, model_name, client):
             try:
                 if os.path.exists(temp_file.name):
                     os.unlink(temp_file.name)
-            except Exception as e:
+            except Exception:
                 pass
             
             # Optionally delete the file from Gemini's servers
             try:
-                client.files.delete(name=uploaded_file.name)
-            except Exception as e:
+                client.files.delete(name=uploaded_gemini_file.name)
+            except Exception:
                 pass
             
-            # Extract text from response
             return result.text
 
     except Exception as e:
@@ -243,27 +236,18 @@ def analyze_pdf(pdf_bytes, prompt, model_name, client):
         import traceback
         st.error(f"Traceback: {traceback.format_exc()}")
         return None
-       
+
 def render_pdf_preview(pdf_bytes):
     """Render the first page of a PDF as an image for preview"""
     try:
-        # Create a memory buffer from the PDF bytes
         pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
         
         if len(pdf_document) > 0:
-            # Load the first page
             first_page = pdf_document.load_page(0)
-            
-            # Render page to an image with a reasonable resolution
             pix = first_page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
-            
-            # Convert to PIL Image
             img_data = pix.tobytes("ppm")
             img = Image.open(io.BytesIO(img_data))
-            
-            # Close the document
             pdf_document.close()
-            
             return img
         else:
             pdf_document.close()
@@ -278,7 +262,7 @@ input_source = None
 
 if uploaded_file is not None:
     pdf_bytes = uploaded_file.read()
-    uploaded_file.seek(0)  # Reset file pointer for later use
+    uploaded_file.seek(0)
     input_source = f"File: {uploaded_file.name}"
 elif pdf_url and pdf_url.strip():
     pdf_bytes = download_pdf_from_url(pdf_url.strip())
@@ -292,67 +276,54 @@ if pdf_bytes:
         st.subheader("Uploaded Brochure")
         st.write(input_source)
         
-        # Display the first page as a preview
         preview_image = render_pdf_preview(pdf_bytes)
         if preview_image:
-            st.image(preview_image, caption="First page preview", width='content')
+            st.image(preview_image, caption="First page preview", use_column_width=True)
         else:
             st.warning("Could not generate preview for this PDF")
     
     with col2:
         st.subheader("Property USPs")
         
-        # Display selected model
         st.info(f"Using model: {selected_model_name}")
         
         analyze_button = st.button("Extract USPs")
         
-        # For better UX, show a placeholder immediately
         result_placeholder = st.empty()
         
         if analyze_button:
-            # Initialize Gemini client
             client = setup_gemini_client()
             if not client:
                 st.stop()
             
-            # Start time for performance tracking
             start_time = time.time()
             
-            # Show thinking state to user
             result_placeholder.info("Thinking... This may take 30-60 seconds depending on the file size.")
             
-            # Prepare the prompt based on whether old USPs are provided
+            # Prepare the prompt
             full_prompt = base_prompt
             if old_usps.strip():
                 full_prompt += old_usps_prompt.format(old_usps=old_usps)
             
-            # Analyze PDF with selected model using new SDK
             analysis = analyze_pdf(pdf_bytes, full_prompt, selected_model, client)
             
-            # Display execution time
             execution_time = time.time() - start_time
             
             if analysis:
-                # Clear placeholder and show result
                 result_placeholder.empty()
                 
-                # Parse and display USPs in a formatted way
                 usps = analysis.strip().split('\n')
                 
                 st.subheader("Extracted USPs")
                 
-                # Display each USP in a more readable format
                 for i, usp in enumerate(usps, 1):
                     if usp.strip():
-                        # Split by pipe character
                         parts = usp.split('|')
                         if len(parts) == 3:
                             category = parts[0].strip()
                             subcategory = parts[1].strip()
                             text = parts[2].strip()
                             
-                            # Display with better formatting
                             col_a, col_b = st.columns([1, 3])
                             with col_a:
                                 st.markdown(f"**{category}**")
@@ -361,12 +332,10 @@ if pdf_bytes:
                                 st.markdown(f"• {text}")
                             st.divider()
                         else:
-                            # Fallback for non-formatted lines
                             st.markdown(f"• {usp}")
                 
                 st.caption(f"Analysis completed in {execution_time:.1f} seconds using {selected_model_name}")
                 
-                # Option to download results
                 st.download_button(
                     label="Download USPs",
                     data=analysis,
@@ -379,25 +348,3 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
