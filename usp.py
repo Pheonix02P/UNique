@@ -163,71 +163,39 @@ def download_pdf_from_url(url):
         return None
 
 def analyze_pdf(pdf_bytes, prompt, model_name, client):
-    """Analyze PDF directly with Gemini using the new SDK"""
+    """Analyze PDF directly with Gemini by converting to images"""
     try:
         with st.spinner(f"Analyzing brochure with {model_name}..."):
-            # Create a temporary file to store the PDF
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
-            temp_file.write(pdf_bytes)
-            temp_file.close()
             
-            # Upload the PDF file
-            uploaded_gemini_file = client.files.upload(file=temp_file.name)
+            # Convert PDF pages to images
+            pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
+            parts = []
             
-            # Wait for the file to be processed and reach ACTIVE state
-            st.info(f"File uploaded. Waiting for processing... (File ID: {uploaded_gemini_file.name})")
-            max_wait_time = 120
-            wait_interval = 2
-            elapsed_time = 0
+            st.info(f"Converting {len(pdf_document)} pages to images...")
             
-            file_status = None
-            while elapsed_time < max_wait_time:
-                file_status = client.files.get(name=uploaded_gemini_file.name)
+            for page_num in range(len(pdf_document)):
+                page = pdf_document.load_page(page_num)
+                pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+                img_bytes = pix.tobytes("png")
                 
-                if file_status.state.name == "ACTIVE":
-                    st.success("File is ready for processing!")
-                    break
-                elif file_status.state.name == "FAILED":
-                    st.error("File processing failed on Gemini's end.")
-                    return None
-                
-                time.sleep(wait_interval)
-                elapsed_time += wait_interval
-                
-                if elapsed_time % 10 == 0:
-                    st.info(f"Still processing... ({elapsed_time}s elapsed)")
+                parts.append(
+                    types.Part.from_bytes(
+                        data=img_bytes,
+                        mime_type="image/png"
+                    )
+                )
             
-            if elapsed_time >= max_wait_time or file_status is None:
-                st.error("Timeout: File did not become active within the expected time.")
-                return None
-
-            # Debug info
-            st.write(f"DEBUG - URI: {file_status.uri}, MIME: {file_status.mime_type}, State: {file_status.state.name}")
-
-            # Generate content using file URI
+            pdf_document.close()
+            
+            # Add the prompt as the last part
+            parts.append(types.Part.from_text(text=prompt))
+            
+            st.info(f"Sending {len(parts)-1} pages to Gemini...")
+            
             result = client.models.generate_content(
                 model=model_name,
-                contents=[
-                    types.Part.from_uri(
-                        file_uri=file_status.uri,
-                        mime_type=file_status.mime_type
-                    ),
-                    types.Part.from_text(text=prompt)
-                ]
+                contents=parts
             )
-            
-            # Clean up the temporary file
-            try:
-                if os.path.exists(temp_file.name):
-                    os.unlink(temp_file.name)
-            except Exception:
-                pass
-            
-            # Optionally delete the file from Gemini's servers
-            try:
-                client.files.delete(name=uploaded_gemini_file.name)
-            except Exception:
-                pass
             
             return result.text
 
@@ -348,5 +316,6 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
 
 
