@@ -116,7 +116,7 @@ st.write("Upload Brochure or Enter URL and (Optionally) Enter Old USPs")
 # Model selection dropdown
 st.subheader("Select Gemini Model")
 model_options = {
-    "Gemini 3 Flash Preview": "gemini-3-flash-preview",
+    "Gemini ": "gemini-2.5-flash",
 }
 selected_model_name = st.selectbox(
     "Choose the AI model for analysis/Switch Models while facing any issue or errors",
@@ -348,4 +348,5 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
 
