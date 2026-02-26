@@ -212,7 +212,7 @@ def analyze_pdf(pdf_bytes, prompt, model_name, client):
                         file_uri=file_status.uri,
                         mime_type=file_status.mime_type
                     ),
-                    types.Part.from_text(prompt)
+                    types.Part.from_text(text=prompt)
                 ]
             )
             
@@ -348,3 +348,4 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
