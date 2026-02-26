@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import tempfile
 from google import genai
+from google.genai import types
 import time
 import fitz  # PyMuPDF for PDF rendering
 import io
@@ -378,6 +379,7 @@ if pdf_bytes:
 # Footer
 st.divider()
 st.caption("Premium Property USP Analyzer - Powered by Google Gemini")
+
 
 
 
