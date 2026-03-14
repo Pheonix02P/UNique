@@ -6,6 +6,7 @@ from google.genai import types
 import time
 import io
 import requests
+import json
 
 # Page configuration
 st.set_page_config(page_title="Premium Property USP Analyzer", layout="wide")
@@ -18,7 +19,8 @@ except KeyError:
     st.error("Key not found")
     st.stop()
 
-# Set up base prompt
+# ── Prompts ────────────────────────────────────────────────────────────────────
+
 base_prompt = """You are an expert real estate copywriter specializing in premium residential properties. You have been provided a brochure PDF for a premium residential project.
 
 Your task is to extract powerful, factual Unique Selling Propositions (USPs) that will compel high-net-worth buyers to take action.
@@ -128,7 +130,6 @@ AWARDS_AND_ACCOLADES | Cnbc Awaaz Award | CNBC Awaaz Real Estate Award 2023 — 
 Begin extraction now. Output ONLY the formatted USP lines. No preamble, no summary, no extra text.
 """
 
-# Additional prompt for when old USPs are provided
 old_usps_prompt = """
 Additionally, I'm providing you with a list of previously identified USPs for this or a similar property. Review these old USPs alongside the brochure.
 
@@ -138,33 +139,116 @@ OLD USPs:
 Merge insights from both sources: remove duplicates, keep the most compelling and unique points from each. Apply the same formatting, character limit, and quality rules to all final USPs.
 """
 
-# Main content area
-st.write("Upload Brochure or Enter URL and (Optionally) Enter Old USPs")
+PREDEFINED_AMENITIES = [
+    "Private Gardens/Balconies", "Swimming Pool", "Internal Street Lights", "Gated Community",
+    "Anti-termite Treatment", "Earthquake Resistant", "Paved Compound", "Permeable Pavement",
+    "Vastu Compliant", "Wheelchair Accessible", "Grade A Building", "Feng Shui", "Society Office",
+    "Heli-Pad", "Solar Lighting", "Well-Maintained Internal Roads", "Energy Efficient Lightining",
+    "Community Hall", "Solar Panel", "Temple", "School", "Pet Park", "Solar Water Heating",
+    "Co-Working Spaces", "Library", "Carrom", "Thermal Insulation", "Creche/Day Care",
+    "Outdoor Event Spaces", "Air Hockey", "Football Ground", "Table Tennis", "Volley Ball Court",
+    "Pool Table", "Chess", "Dart Board", "Billiards", "Foosball", "Cricket Pitch", "Bowling Alley",
+    "Lawn Tennis Court", "Basketball Court", "Rock Climbing Wall", "Badminton Court",
+    "Beach Volley Ball Court", "Spa", "Jacuzzi", "Acupressure Park", "Skating Rink", "Squash Court",
+    "Massage Room", "Yoga/Meditation Area", "Sauna", "Futsal", "Reflexology Park", "Aerobics Centre",
+    "Video Gaming Room", "Ayurvedic Centre", "Doctor on Call", "Steam Room", "Flower Garden",
+    "Terrace Garden", "Medical Centre", "Gymnasium", "Open Space", "Landscape Garden", "Fountain",
+    "Clinic", "Pilates Studios", "Natural Pond", "Pedestrian-Friendly Zones", "Manicured Garden",
+    "Senior Citizen Sitout", "Archery Range", "Water Park/Slides", "Sit Out Area",
+    "Community Garden/Urban Farming", "Green Wall (Vertical Gardens)", "Forest Trail",
+    "Cabana Sitting", "Park", "Car Parking", "Art and Craft Studio", "EV Charging Stations",
+    "Music Room", "Dance Studio", "Barbecue", "Banquet Hall", "Sun Deck", "Party Lawn", "Sand Pit",
+    "Mini Theatre", "Club House", "Children's Play Area", "Multipurpose Hall", "Gazebo",
+    "Amphitheatre", "Card Room", "Jogging Track", "Multipurpose court", "Theatre", "Golf Course",
+    "Tot Lot", "Nature Trail", "Theater Home", "Cycling Track", "Art Gallery", "Fire Alarm",
+    "Gaming Zones", "Boom Barrier", "Wine Cellar", "Emergency Exits", "Golf Simulator",
+    "CCTV Camera Security", "Golf Putty", "Fire Fighting Systems", "Security Cabin", "Indoor Games",
+    "Gas Leak Detectors", "Biometric/Smart Card Access", "Fire NOC", "Video Door Security",
+    "Theme Park", "Smoke Detectors", "24x7 Security", "Panic Buttons in Apartments",
+    "Rooftop Lounge", "Car-Free Zones", "Ambulance Service", "Cigar Lounge", "Intercom Facilities",
+    "Emergency Evacuation Chairs", "Signage and Road Markings", "Lounge", "Bar/Chill-Out Lounge",
+    "Fall Detection Systems in Bathrooms", "Defibrillators in Common Areas", "Piped Gas",
+    "Business Lounge", "Restaurant", "Waiting Lounge", "Reading Lounge", "Wi-Fi Connectivity",
+    "Pergola", "Smart Home Automation", "DTH Television", "Laundry", "Conference Room",
+    "Wi-Fi Zones in Common Areas", "Cafeteria", "RO System", "Food Court", "Laundromat",
+    "Shopping Centre", "Property Staff", "Changing Area", "Lifts", "Name Plates",
+    "Automated Car Wash", "Concierge Service", "Toilet for Drivers", "Car Wash Area", "Salon",
+    "Grocery Shop", "Bus Shelter", "Milk Booth", "Letter Box", "Petrol Pump", "Entrance Lobby",
+    "24/7 Power Backup", "Maintenance Staff", "Intercom", "ATM", "DG Availability",
+    "Power Back up Lift", "Escalators", "Noise Insulation in Apartments",
+    "Centralized Air Conditioning", "Plumber/Electrician on Call", "Secretarial Services",
+    "Underground Electric Cabling", "Power Substation", "Braille Signage", "Air Purification Systems",
+    "Composting Facilities", "Recycling Facilities", "Garbage Chute", "Garbage Disposal",
+    "Organic Waste Converter", "Waste Segregation and Disposal", "Waste Management",
+    "Sewage Treatment Plant", "Water Treatment Plant", "Water Softener Plant", "Smart Water Meters",
+    "Rain Water Harvesting", "Bioswales", "Ground Water Recharging Systems", "24/7 Water Supply",
+    "Municipal Water Supply", "Low Flow Fixtures", "Greywater Recycling", "Borewell Water Supply",
+]
 
-# Model selection
-st.subheader("Select Gemini Model")
-model_options = {
-    "Gemini 3.1 Pro Preview": "gemini-3.1-pro-preview",
-    "Gemini 2.5 Pro": "gemini-2.5-pro-preview-06-05",
-}
-selected_model_name = st.selectbox(
-    "Choose the AI model for analysis / Switch models if facing errors",
-    options=list(model_options.keys()),
-    index=0,
-)
-selected_model = model_options[selected_model_name]
+amenities_extraction_prompt = """You are an information extraction assistant.
 
-# File uploader
-uploaded_file = st.file_uploader("Upload a brochure file", type=["pdf"])
+Your task is to extract amenities mentioned in the provided real estate brochure PDF.
 
-# URL input
-st.write("OR")
-pdf_url = st.text_input("Enter URL to PDF brochure", placeholder="https://example.com/brochure.pdf")
+IMPORTANT RULES:
+1. Only extract amenities that EXACTLY match items from the predefined amenities list provided below.
+2. Do NOT add new amenities.
+3. Do NOT infer or assume amenities.
+4. If a brochure mentions something similar but not exactly matching the list, ignore it.
+5. Return the output as a JSON array and nothing else — no preamble, no explanation, no markdown fences.
+6. If no amenities from the list are found, return an empty array [].
+7. Each amenity should appear only once in the output.
+8. Preserve the exact spelling and format from the predefined list.
 
-# Old USPs
-st.subheader("Enter Old USPs (Optional)")
-old_usps = st.text_area("Paste previous USPs here", height=200)
+PREDEFINED AMENITIES LIST:
+Private Gardens/Balconies, Swimming Pool, Internal Street Lights, Gated Community,
+Anti-termite Treatment, Earthquake Resistant, Paved Compound, Permeable Pavement,
+Vastu Compliant, Wheelchair Accessible, Grade A Building, Feng Shui, Society Office,
+Heli-Pad, Solar Lighting, Well-Maintained Internal Roads, Energy Efficient Lightining,
+Community Hall, Solar Panel, Temple, School, Pet Park, Solar Water Heating,
+Co-Working Spaces, Library, Carrom, Thermal Insulation, Creche/Day Care,
+Outdoor Event Spaces, Air Hockey, Football Ground, Table Tennis, Volley Ball Court,
+Pool Table, Chess, Dart Board, Billiards, Foosball, Cricket Pitch, Bowling Alley,
+Lawn Tennis Court, Basketball Court, Rock Climbing Wall, Badminton Court,
+Beach Volley Ball Court, Spa, Jacuzzi, Acupressure Park, Skating Rink, Squash Court,
+Massage Room, Yoga/Meditation Area, Sauna, Futsal, Reflexology Park, Aerobics Centre,
+Video Gaming Room, Ayurvedic Centre, Doctor on Call, Steam Room, Flower Garden,
+Terrace Garden, Medical Centre, Gymnasium, Open Space, Landscape Garden, Fountain,
+Clinic, Pilates Studios, Natural Pond, Pedestrian-Friendly Zones, Manicured Garden,
+Senior Citizen Sitout, Archery Range, Water Park/Slides, Sit Out Area,
+Community Garden/Urban Farming, Green Wall (Vertical Gardens), Forest Trail,
+Cabana Sitting, Park, Car Parking, Art and Craft Studio, EV Charging Stations,
+Music Room, Dance Studio, Barbecue, Banquet Hall, Sun Deck, Party Lawn, Sand Pit,
+Mini Theatre, Club House, Children's Play Area, Multipurpose Hall, Gazebo,
+Amphitheatre, Card Room, Jogging Track, Multipurpose court, Theatre, Golf Course,
+Tot Lot, Nature Trail, Theater Home, Cycling Track, Art Gallery, Fire Alarm,
+Gaming Zones, Boom Barrier, Wine Cellar, Emergency Exits, Golf Simulator,
+CCTV Camera Security, Golf Putty, Fire Fighting Systems, Security Cabin, Indoor Games,
+Gas Leak Detectors, Biometric/Smart Card Access, Fire NOC, Video Door Security,
+Theme Park, Smoke Detectors, 24x7 Security, Panic Buttons in Apartments,
+Rooftop Lounge, Car-Free Zones, Ambulance Service, Cigar Lounge, Intercom Facilities,
+Emergency Evacuation Chairs, Signage and Road Markings, Lounge, Bar/Chill-Out Lounge,
+Fall Detection Systems in Bathrooms, Defibrillators in Common Areas, Piped Gas,
+Business Lounge, Restaurant, Waiting Lounge, Reading Lounge, Wi-Fi Connectivity,
+Pergola, Smart Home Automation, DTH Television, Laundry, Conference Room,
+Wi-Fi Zones in Common Areas, Cafeteria, RO System, Food Court, Laundromat,
+Shopping Centre, Property Staff, Changing Area, Lifts, Name Plates,
+Automated Car Wash, Concierge Service, Toilet for Drivers, Car Wash Area, Salon,
+Grocery Shop, Bus Shelter, Milk Booth, Letter Box, Petrol Pump, Entrance Lobby,
+24/7 Power Backup, Maintenance Staff, Intercom, ATM, DG Availability,
+Power Back up Lift, Escalators, Noise Insulation in Apartments,
+Centralized Air Conditioning, Plumber/Electrician on Call, Secretarial Services,
+Underground Electric Cabling, Power Substation, Braille Signage, Air Purification Systems,
+Composting Facilities, Recycling Facilities, Garbage Chute, Garbage Disposal,
+Organic Waste Converter, Waste Segregation and Disposal, Waste Management,
+Sewage Treatment Plant, Water Treatment Plant, Water Softener Plant, Smart Water Meters,
+Rain Water Harvesting, Bioswales, Ground Water Recharging Systems, 24/7 Water Supply,
+Municipal Water Supply, Low Flow Fixtures, Greywater Recycling, Borewell Water Supply
 
+Output ONLY a valid JSON array. No preamble, no explanation, no markdown code fences.
+Example: ["Swimming Pool", "Gymnasium", "Club House"]
+"""
+
+# ── Helper functions ───────────────────────────────────────────────────────────
 
 def setup_gemini_client():
     try:
@@ -195,8 +279,7 @@ def analyze_pdf_via_files_api(pdf_bytes, prompt, model_name, client):
     tmp_path = None
 
     try:
-        with st.spinner(f"Uploading PDF to Gemini..."):
-            # Write bytes to a temp file so the SDK can upload it
+        with st.spinner("Uploading PDF to Gemini..."):
             with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
                 tmp.write(pdf_bytes)
                 tmp_path = tmp.name
@@ -206,7 +289,6 @@ def analyze_pdf_via_files_api(pdf_bytes, prompt, model_name, client):
                 config=types.UploadFileConfig(mime_type="application/pdf"),
             )
 
-            # Poll until the file is ACTIVE
             max_wait = 60
             waited = 0
             while uploaded_gemini_file.state.name != "ACTIVE":
@@ -238,12 +320,11 @@ def analyze_pdf_via_files_api(pdf_bytes, prompt, model_name, client):
         return None
 
     finally:
-        # Always delete the uploaded file from Gemini and the local temp file
         if uploaded_gemini_file is not None:
             try:
                 client.files.delete(name=uploaded_gemini_file.name)
             except Exception:
-                pass  # Best-effort cleanup
+                pass
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
@@ -251,7 +332,33 @@ def analyze_pdf_via_files_api(pdf_bytes, prompt, model_name, client):
                 pass
 
 
-# ── Main flow ──────────────────────────────────────────────────────────────────
+# ── UI ─────────────────────────────────────────────────────────────────────────
+
+st.write("Upload Brochure or Enter URL and (Optionally) Enter Old USPs")
+
+# Model selection
+st.subheader("Select Gemini Model")
+model_options = {
+    "Gemini 3.1 Pro Preview": "gemini-3.1-pro-preview",
+    "Gemini 2.5 Pro": "gemini-2.5-pro-preview-06-05",
+}
+selected_model_name = st.selectbox(
+    "Choose the AI model for analysis / Switch models if facing errors",
+    options=list(model_options.keys()),
+    index=0,
+)
+selected_model = model_options[selected_model_name]
+
+# File / URL inputs
+uploaded_file = st.file_uploader("Upload a brochure file", type=["pdf"])
+st.write("OR")
+pdf_url = st.text_input("Enter URL to PDF brochure", placeholder="https://example.com/brochure.pdf")
+
+# Old USPs
+st.subheader("Enter Old USPs (Optional)")
+old_usps = st.text_area("Paste previous USPs here", height=200)
+
+# ── Resolve PDF source ─────────────────────────────────────────────────────────
 
 pdf_bytes = None
 input_source = None
@@ -265,6 +372,8 @@ elif pdf_url and pdf_url.strip():
     if pdf_bytes:
         input_source = f"URL: {pdf_url}"
 
+# ── Main panels ────────────────────────────────────────────────────────────────
+
 if pdf_bytes:
     col1, col2 = st.columns([1, 1])
 
@@ -273,10 +382,13 @@ if pdf_bytes:
         st.write(input_source)
         st.info(f"PDF size: {len(pdf_bytes) / 1024:.1f} KB")
 
-    with col2:
-        st.subheader("Property USPs")
+    # ── Tab layout for USPs and Amenities ──────────────────────────────────────
+    tab_usp, tab_amenities = st.tabs(["📋 Extract USPs", "🏊 Extract Amenities"])
+
+    # ── USP Tab ────────────────────────────────────────────────────────────────
+    with tab_usp:
         st.info(f"Model: {selected_model_name}")
-        analyze_button = st.button("Extract USPs")
+        analyze_button = st.button("Extract USPs", key="btn_usp")
         result_placeholder = st.empty()
 
         if analyze_button:
@@ -296,7 +408,6 @@ if pdf_bytes:
 
             if analysis:
                 result_placeholder.empty()
-
                 usps = [u for u in analysis.strip().split("\n") if u.strip()]
 
                 st.subheader("Extracted USPs")
@@ -335,6 +446,96 @@ if pdf_bytes:
                 )
             else:
                 result_placeholder.error("Failed to generate analysis. Please try again.")
+
+    # ── Amenities Tab ──────────────────────────────────────────────────────────
+    with tab_amenities:
+        st.info(f"Model: {selected_model_name}")
+        st.write(
+            "Extracts only amenities that exactly match the predefined list "
+            f"({len(PREDEFINED_AMENITIES)} items)."
+        )
+        amenities_button = st.button("Extract Amenities", key="btn_amenities")
+        amenities_placeholder = st.empty()
+
+        if amenities_button:
+            client = setup_gemini_client()
+            if not client:
+                st.stop()
+
+            start_time = time.time()
+            amenities_placeholder.info(
+                "Uploading PDF and extracting amenities… this may take 30–90 seconds."
+            )
+
+            raw = analyze_pdf_via_files_api(
+                pdf_bytes, amenities_extraction_prompt, selected_model, client
+            )
+            execution_time = time.time() - start_time
+
+            if raw:
+                amenities_placeholder.empty()
+
+                # Parse JSON response
+                try:
+                    # Strip any accidental markdown fences the model may add
+                    clean = raw.strip().strip("```json").strip("```").strip()
+                    extracted = json.loads(clean)
+                except json.JSONDecodeError:
+                    st.error(
+                        "Model returned unexpected format. Raw response shown below."
+                    )
+                    st.code(raw)
+                    extracted = []
+
+                if extracted:
+                    st.subheader(f"Amenities Found ({len(extracted)})")
+
+                    # Validate each item against predefined list
+                    valid = [a for a in extracted if a in PREDEFINED_AMENITIES]
+                    invalid = [a for a in extracted if a not in PREDEFINED_AMENITIES]
+
+                    # Display in a grid-style layout (3 columns)
+                    cols = st.columns(3)
+                    for i, amenity in enumerate(valid):
+                        with cols[i % 3]:
+                            st.markdown(f"✅ {amenity}")
+
+                    if invalid:
+                        st.warning(
+                            f"⚠️ {len(invalid)} item(s) returned by the model did not match "
+                            "the predefined list and were excluded:"
+                        )
+                        for item in invalid:
+                            st.caption(f"  • {item}")
+
+                    st.caption(
+                        f"Extraction completed in {execution_time:.1f}s using {selected_model_name}."
+                    )
+
+                    # Download as JSON
+                    st.download_button(
+                        label="Download Amenities (JSON)",
+                        data=json.dumps(valid, indent=2),
+                        file_name="property_amenities.json",
+                        mime="application/json",
+                    )
+
+                    # Download as plain text (one per line)
+                    st.download_button(
+                        label="Download Amenities (TXT)",
+                        data="\n".join(valid),
+                        file_name="property_amenities.txt",
+                        mime="text/plain",
+                    )
+                else:
+                    st.info("No matching amenities were found in this brochure.")
+                    st.caption(
+                        f"Extraction completed in {execution_time:.1f}s using {selected_model_name}."
+                    )
+            else:
+                amenities_placeholder.error(
+                    "Failed to extract amenities. Please try again."
+                )
 
 # Footer
 st.divider()
