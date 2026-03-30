@@ -340,7 +340,7 @@ st.write("Upload Brochure or Enter URL and (Optionally) Enter Old USPs")
 st.subheader("Select Gemini Model")
 model_options = {
     "Gemini 3.1 Pro Preview": "gemini-3.1-pro-preview",
-    "Gemini 2.5 Pro": "gemini-2.5-pro-preview-06-05",
+    "Gemini 2.5 Pro": "gemini-2.5-pro",
 }
 selected_model_name = st.selectbox(
     "Choose the AI model for analysis / Switch models if facing errors",
