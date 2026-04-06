@@ -7,6 +7,7 @@ import time
 import io
 import requests
 import json
+from bs4 import BeautifulSoup
 
 # Page configuration
 st.set_page_config(page_title="Premium Property USP Analyzer", layout="wide")
@@ -137,6 +138,368 @@ OLD USPs:
 {old_usps}
 
 Merge insights from both sources: remove duplicates, keep the most compelling and unique points from each. Apply the same formatting, character limit, and quality rules to all final USPs.
+"""
+
+website_usp_prompt = """You are an expert real estate copywriter specializing in premium residential properties. You have been provided the text content scraped from a premium residential project's website.
+
+Your task is to extract powerful, factual Unique Selling Propositions (USPs) that will compel high-net-worth buyers to take action.
+
+WEBSITE CONTENT:
+{website_content}
+
+═══════════════════════════════════════════
+EXTRACTION SCOPE — cover ALL of these angles:
+═══════════════════════════════════════════
+1. Thematic & Architectural Identity — design philosophy, style, signature elements
+2. Clubhouse & Lifestyle Amenities — name every facility with its size/count if stated
+3. Technology, Automation & Security — smart home, surveillance, access control
+4. Landscape, Green & Open Spaces — area %, acres, named gardens, water bodies
+5. Location & Connectivity — distances to landmarks, roads, transit hubs (use exact km/min)
+6. Developer, Architect & Consultant Pedigree — ONLY if a proper name is explicitly written
+7. Awards, Certifications & Approvals — include certifying body and year if available
+8. Unit & Project Specifications — total units, density, floors, BHK range, super area
+9. Any other distinctive lifestyle, wellness, or convenience feature
+
+═══════════════════════════════════════════
+QUALITY RULES (non-negotiable):
+═══════════════════════════════════════════
+• FACTUAL PRECISION: Every USP must reflect data explicitly present in the website content.
+• PROPER NOUNS ONLY: Include architect/designer/consultant names ONLY if explicitly stated.
+• NO NOISE: Ignore boilerplate marketing copy, generic slogans, and legal disclaimers.
+• NO HEADERS: Output is a flat list — no section titles or groupings.
+• GRAMMAR: Capitalize proper nouns; use active, professional language.
+• RANKING: Most unique and buyer-influential USP first; descending order throughout.
+
+═══════════════════════════════════════════
+CHARACTER LIMIT — STRICTLY ENFORCED:
+═══════════════════════════════════════════
+• Each USP text must be ≤ 75 characters (including spaces and punctuation).
+
+═══════════════════════════════════════════
+CATEGORIZATION — follow exactly:
+═══════════════════════════════════════════
+Assign exactly ONE category from this fixed list:
+  AMENITIES, LOCATION_AND_CONNECTIVITY, CONSTRUCTION_AND_DESIGN,
+  TECHNOLOGY_AND_AUTOMATION, OFFERS, CERTIFICATES_AND_APPROVALS,
+  AWARDS_AND_ACCOLADES, MASTER_PLAN
+
+Sub-category rules:
+
+▸ AMENITIES → pick exactly one from this fixed list only:
+  ROOFTOP_LOUNGE, CHESS, VISITORS_PARKING, SAUNA, MULTIPURPOSE_COURT,
+  ARTS_AND_CRAFTS_STUDIO, MUSIC_ROOM, THEME_PARK, AYURVEDIC_CENTRE,
+  MASSAGE_ROOM, SALON, AIR_HOCKEY, GYMNASIUM, FOOSBALL, RESTAURANT,
+  SWIMMING_POOL, CAFETERIA, LIBRARY, CARD_ROOM, CO_WORKING_SPACES,
+  COMMUNITY_GARDEN_URBAN_FARMING, CLUB_HOUSE, BUSINESS_LOUNGE,
+  CRICKET_PITCH, STEAM_ROOM, TOT_LOT, AMPHITHEATRE, ESCALATOR,
+  REFLEXOLOGY_PARK, JOGGING_TRACK, CARROM, GREEN_WALL, WATER_PARK_SLIDES,
+  INDOOR_GAMES, TABLE_TENNIS, FOOTBALL, SCHOOL, YOGA_MEDITATION_AREA,
+  FOOD_COURT, BADMINTON_COURT, MEDICAL_CENTRE, CIGAR_LOUNGE, CLINIC,
+  FLOWER_GARDEN, SQUASH_COURT, BILLIARDS, CAR_WASH_AREA, GAZEBO, PARKING,
+  LANDSCAPE_GARDEN, TEMPLE, BARBEQUE, CYCLING_TRACK, CRECHE, LIFT,
+  THEATER_HOME, SENIOR_CITIZEN_SITOUT, AEROBICS_CENTRE, AUTOMATED_CAR_WASH,
+  BANQUET_HALL, SAND_PIT, PEDESTRIAN_FRIENDLY_ZONES, MULTIPURPOSE_HALL,
+  EXTERIOR_LANDSCAPE, CAR_PARKING, GAMING_ZONES, PRIVATE_GARDENS_BALCONIES,
+  MINI_THEATRE, GROCERY_SHOP, TERRACE_GARDEN, ARCHERY_RANGE, GOLF_COURSE,
+  ATM, SKATING_RINK, BASKETBALL_COURT, NATURE_TRAIL, SHOPPING_CENTRE,
+  PERGOLA, POOL_TABLE, PAVED_COMPOUND, LOUNGE, TODDLER_POOL,
+  COMMUNITY_HALL, PARTY_LAWN, READING_LOUNGE, FOUNTAIN, JACUZZI,
+  POWER_SUBSTATION, CENTRALIZED_AIR_CONDITIONING, SIT_OUT_AREA,
+  CHILDRENS_PLAY_AREA, LAWN_TENNIS_COURT, SPA, BAR_CHILL_OUT_LOUNGE,
+  INTERNAL_ROAD, THEATRE, BOWLING_ALLEY, MANICURED_GARDEN,
+  ACUPRESSURE_PARK, CONFERENCE_ROOM, FOREST_TRAIL,
+  BEACH_VOLLEY_BALL_COURT, INFINITY_POOL, ACCUPRESSURE_PARK, OPEN_SPACE,
+  DANCE_STUDIO, SUN_DECK, NATURAL_POND, ROCK_CLIMBING_WALL, DART_BOARD,
+  EV_CHARGING_STATIONS
+  → If no suitable sub-category exists, do NOT use AMENITIES; do NOT create a custom one.
+
+▸ LOCATION_AND_CONNECTIVITY → pick exactly one from this fixed list only:
+  BUS, ELECTRICITY, BEACH, PETROL_PUMP, COLLEGE, AIRPORT, MARKETS, METRO,
+  STADIUM, HOSPITALITY, GREEN_BELT, PARK, WATER, GOLF_COURSE, ATM,
+  HERITAGE_PLACES, BANK, MULTI_LEVEL_PARKING, RAILWAY, AMUSEMENT_PARK,
+  HIGHWAY, HOSPITAL, FLYOVER, MALLS, SCHOOL, MAJOR_ROAD, BUSINESS_HUB,
+  PUBLIC_TRANSPORTATION
+  → If no suitable sub-category exists, do NOT use LOCATION_AND_CONNECTIVITY; do NOT create a custom one.
+
+▸ All other categories → create a custom sub-category in Title Case.
+
+═══════════════════════════════════════════
+OUTPUT FORMAT — one line per USP, nothing else:
+═══════════════════════════════════════════
+[CATEGORY] | [SUB_CATEGORY] | [USP text ≤ 75 characters]
+
+Begin extraction now. Output ONLY the formatted USP lines. No preamble, no summary, no extra text.
+"""
+
+website_amenities_prompt = """You are an information extraction assistant.
+
+Your task is to extract amenities from the real estate project website content provided below.
+
+WEBSITE CONTENT:
+{website_content}
+
+IMPORTANT RULES:
+1. Only extract amenities that EXACTLY match items from the predefined amenities list provided below.
+2. Do NOT add new amenities.
+3. Do NOT infer or assume amenities.
+4. If the website mentions something similar but not exactly matching the list, ignore it.
+5. Return the output as a JSON array and nothing else — no preamble, no explanation, no markdown fences.
+6. If no amenities from the list are found, return an empty array [].
+7. Each amenity should appear only once in the output.
+8. Preserve the exact spelling and format from the predefined list.
+
+PREDEFINED AMENITIES LIST:
+Private Gardens/Balconies, Swimming Pool, Internal Street Lights, Gated Community,
+Anti-termite Treatment, Earthquake Resistant, Paved Compound, Permeable Pavement,
+Vastu Compliant, Wheelchair Accessible, Grade A Building, Feng Shui, Society Office,
+Heli-Pad, Solar Lighting, Well-Maintained Internal Roads, Energy Efficient Lightining,
+Community Hall, Solar Panel, Temple, School, Pet Park, Solar Water Heating,
+Co-Working Spaces, Library, Carrom, Thermal Insulation, Creche/Day Care,
+Outdoor Event Spaces, Air Hockey, Football Ground, Table Tennis, Volley Ball Court,
+Pool Table, Chess, Dart Board, Billiards, Foosball, Cricket Pitch, Bowling Alley,
+Lawn Tennis Court, Basketball Court, Rock Climbing Wall, Badminton Court,
+Beach Volley Ball Court, Spa, Jacuzzi, Acupressure Park, Skating Rink, Squash Court,
+Massage Room, Yoga/Meditation Area, Sauna, Futsal, Reflexology Park, Aerobics Centre,
+Video Gaming Room, Ayurvedic Centre, Doctor on Call, Steam Room, Flower Garden,
+Terrace Garden, Medical Centre, Gymnasium, Open Space, Landscape Garden, Fountain,
+Clinic, Pilates Studios, Natural Pond, Pedestrian-Friendly Zones, Manicured Garden,
+Senior Citizen Sitout, Archery Range, Water Park/Slides, Sit Out Area,
+Community Garden/Urban Farming, Green Wall (Vertical Gardens), Forest Trail,
+Cabana Sitting, Park, Car Parking, Art and Craft Studio, EV Charging Stations,
+Music Room, Dance Studio, Barbecue, Banquet Hall, Sun Deck, Party Lawn, Sand Pit,
+Mini Theatre, Club House, Children's Play Area, Multipurpose Hall, Gazebo,
+Amphitheatre, Card Room, Jogging Track, Multipurpose court, Theatre, Golf Course,
+Tot Lot, Nature Trail, Theater Home, Cycling Track, Art Gallery, Fire Alarm,
+Gaming Zones, Boom Barrier, Wine Cellar, Emergency Exits, Golf Simulator,
+CCTV Camera Security, Golf Putty, Fire Fighting Systems, Security Cabin, Indoor Games,
+Gas Leak Detectors, Biometric/Smart Card Access, Fire NOC, Video Door Security,
+Theme Park, Smoke Detectors, 24x7 Security, Panic Buttons in Apartments,
+Rooftop Lounge, Car-Free Zones, Ambulance Service, Cigar Lounge, Intercom Facilities,
+Emergency Evacuation Chairs, Signage and Road Markings, Lounge, Bar/Chill-Out Lounge,
+Fall Detection Systems in Bathrooms, Defibrillators in Common Areas, Piped Gas,
+Business Lounge, Restaurant, Waiting Lounge, Reading Lounge, Wi-Fi Connectivity,
+Pergola, Smart Home Automation, DTH Television, Laundry, Conference Room,
+Wi-Fi Zones in Common Areas, Cafeteria, RO System, Food Court, Laundromat,
+Shopping Centre, Property Staff, Changing Area, Lifts, Name Plates,
+Automated Car Wash, Concierge Service, Toilet for Drivers, Car Wash Area, Salon,
+Grocery Shop, Bus Shelter, Milk Booth, Letter Box, Petrol Pump, Entrance Lobby,
+24/7 Power Backup, Maintenance Staff, Intercom, ATM, DG Availability,
+Power Back up Lift, Escalators, Noise Insulation in Apartments,
+Centralized Air Conditioning, Plumber/Electrician on Call, Secretarial Services,
+Underground Electric Cabling, Power Substation, Braille Signage, Air Purification Systems,
+Composting Facilities, Recycling Facilities, Garbage Chute, Garbage Disposal,
+Organic Waste Converter, Waste Segregation and Disposal, Waste Management,
+Sewage Treatment Plant, Water Treatment Plant, Water Softener Plant, Smart Water Meters,
+Rain Water Harvesting, Bioswales, Ground Water Recharging Systems, 24/7 Water Supply,
+Municipal Water Supply, Low Flow Fixtures, Greywater Recycling, Borewell Water Supply
+
+Output ONLY a valid JSON array. No preamble, no explanation, no markdown code fences.
+Example: ["Swimming Pool", "Gymnasium", "Club House"]
+"""
+
+specifications_prompt = """You are a real estate data extraction specialist. You have been provided a brochure/document for a premium residential project.
+
+Your task is to extract all available project and unit specifications in a structured format.
+
+═══════════════════════════════════════════
+EXTRACTION SCOPE — extract ALL of the following if present:
+═══════════════════════════════════════════
+
+PROJECT-LEVEL SPECIFICATIONS:
+- Project Name
+- Developer / Builder Name
+- Location / Address
+- Total Land Area (in acres/sq ft)
+- Total Number of Towers / Blocks
+- Total Number of Units / Apartments
+- Number of Floors per Tower
+- Total Number of Basements
+- Total Parking Spaces
+- Project Status (Under Construction / Ready to Move / Upcoming)
+- Possession Date / Expected Completion
+- RERA Registration Number(s)
+- Launch Date
+- Total Open Space %
+- FAR / FSI
+- Plot Area
+
+UNIT CONFIGURATIONS:
+- BHK Types available (e.g. 2 BHK, 3 BHK, 4 BHK, Penthouse)
+- Super Built-up Area range per configuration (in sq ft)
+- Carpet Area range per configuration (in sq ft)
+- Built-up Area range per configuration (if available)
+- Number of units per configuration
+- Floor range per configuration (e.g. floors 5–20)
+- Price range per configuration (if mentioned)
+
+CONSTRUCTION SPECIFICATIONS:
+- Structure type (RCC / Steel / etc.)
+- External wall material
+- Internal wall material
+- Flooring (living, bedroom, kitchen, bathroom)
+- Ceiling height
+- Window type / brand
+- Door type (main door, internal doors)
+- Kitchen specifications (counter, sink, fittings)
+- Bathroom fittings brand(s)
+- Electrical fittings / load per unit
+- Plumbing / pipe material
+- Paint brand / type (internal, external)
+- Waterproofing details
+
+COMMON AREA SPECIFICATIONS:
+- Lobby type / finishing
+- Lift brand / count / capacity
+- Generator backup (full / partial, KVA)
+- Water supply source
+- Sewage treatment capacity
+- Rainwater harvesting
+- Security system details
+
+═══════════════════════════════════════════
+QUALITY RULES:
+═══════════════════════════════════════════
+• Extract ONLY data explicitly stated in the document. Do NOT infer or assume.
+• Use exact numbers, units, and brand names as written.
+• If a field is not mentioned, skip it entirely — do NOT write "Not mentioned" or "N/A".
+• Preserve original units (sq ft, sq m, acres, etc.)
+
+═══════════════════════════════════════════
+OUTPUT FORMAT — strict JSON only:
+═══════════════════════════════════════════
+Return a single valid JSON object with this structure:
+
+{
+  "project": {
+    "Field Name": "Value",
+    ...
+  },
+  "unit_configurations": [
+    {
+      "type": "3 BHK",
+      "super_builtup_area": "1850–2100 sq ft",
+      "carpet_area": "1350–1520 sq ft",
+      "num_units": "120",
+      "floor_range": "5–25",
+      "price_range": "₹2.5–3.2 Cr"
+    },
+    ...
+  ],
+  "construction_specs": {
+    "Field Name": "Value",
+    ...
+  },
+  "common_area_specs": {
+    "Field Name": "Value",
+    ...
+  }
+}
+
+Output ONLY the JSON object. No preamble, no explanation, no markdown fences.
+"""
+
+website_specifications_prompt = """You are a real estate data extraction specialist. You have been provided the scraped text content from a premium residential project's website.
+
+WEBSITE CONTENT:
+{website_content}
+
+Your task is to extract all available project and unit specifications in a structured format.
+
+═══════════════════════════════════════════
+EXTRACTION SCOPE — extract ALL of the following if present:
+═══════════════════════════════════════════
+
+PROJECT-LEVEL SPECIFICATIONS:
+- Project Name
+- Developer / Builder Name
+- Location / Address
+- Total Land Area (in acres/sq ft)
+- Total Number of Towers / Blocks
+- Total Number of Units / Apartments
+- Number of Floors per Tower
+- Total Number of Basements
+- Total Parking Spaces
+- Project Status (Under Construction / Ready to Move / Upcoming)
+- Possession Date / Expected Completion
+- RERA Registration Number(s)
+- Launch Date
+- Total Open Space %
+- FAR / FSI
+- Plot Area
+
+UNIT CONFIGURATIONS:
+- BHK Types available (e.g. 2 BHK, 3 BHK, 4 BHK, Penthouse)
+- Super Built-up Area range per configuration (in sq ft)
+- Carpet Area range per configuration (in sq ft)
+- Built-up Area range per configuration (if available)
+- Number of units per configuration
+- Floor range per configuration (e.g. floors 5–20)
+- Price range per configuration (if mentioned)
+
+CONSTRUCTION SPECIFICATIONS:
+- Structure type (RCC / Steel / etc.)
+- External wall material
+- Internal wall material
+- Flooring (living, bedroom, kitchen, bathroom)
+- Ceiling height
+- Window type / brand
+- Door type (main door, internal doors)
+- Kitchen specifications (counter, sink, fittings)
+- Bathroom fittings brand(s)
+- Electrical fittings / load per unit
+- Plumbing / pipe material
+- Paint brand / type (internal, external)
+- Waterproofing details
+
+COMMON AREA SPECIFICATIONS:
+- Lobby type / finishing
+- Lift brand / count / capacity
+- Generator backup (full / partial, KVA)
+- Water supply source
+- Sewage treatment capacity
+- Rainwater harvesting
+- Security system details
+
+═══════════════════════════════════════════
+QUALITY RULES:
+═══════════════════════════════════════════
+• Extract ONLY data explicitly stated in the website content. Do NOT infer or assume.
+• Use exact numbers, units, and brand names as written.
+• If a field is not mentioned, skip it entirely — do NOT write "Not mentioned" or "N/A".
+• Preserve original units (sq ft, sq m, acres, etc.)
+
+═══════════════════════════════════════════
+OUTPUT FORMAT — strict JSON only:
+═══════════════════════════════════════════
+Return a single valid JSON object with this structure:
+
+{
+  "project": {
+    "Field Name": "Value",
+    ...
+  },
+  "unit_configurations": [
+    {
+      "type": "3 BHK",
+      "super_builtup_area": "1850–2100 sq ft",
+      "carpet_area": "1350–1520 sq ft",
+      "num_units": "120",
+      "floor_range": "5–25",
+      "price_range": "₹2.5–3.2 Cr"
+    },
+    ...
+  ],
+  "construction_specs": {
+    "Field Name": "Value",
+    ...
+  },
+  "common_area_specs": {
+    "Field Name": "Value",
+    ...
+  }
+}
+
+Output ONLY the JSON object. No preamble, no explanation, no markdown fences.
 """
 
 PREDEFINED_AMENITIES = [
@@ -273,6 +636,49 @@ def download_pdf_from_url(url):
         return None
 
 
+def scrape_website_content(url):
+    """Scrape and clean text content from a project website URL."""
+    try:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            )
+        }
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Remove noise tags
+        for tag in soup(["script", "style", "nav", "footer", "header",
+                          "meta", "noscript", "iframe", "svg", "button"]):
+            tag.decompose()
+
+        # Extract visible text
+        text = soup.get_text(separator="\n")
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        # Deduplicate consecutive identical lines
+        deduped = []
+        prev = None
+        for line in lines:
+            if line != prev:
+                deduped.append(line)
+            prev = line
+
+        content = "\n".join(deduped)
+        # Cap at ~15,000 chars to stay within prompt limits
+        return content[:15000]
+
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error scraping website: {str(e)}")
+        return None
+    except Exception as e:
+        st.error(f"Error processing website content: {str(e)}")
+        return None
+
+
 def analyze_pdf_via_files_api(pdf_bytes, prompt, model_name, client):
     """Upload PDF to Gemini Files API, generate content, then delete the file."""
     uploaded_gemini_file = None
@@ -332,9 +738,83 @@ def analyze_pdf_via_files_api(pdf_bytes, prompt, model_name, client):
                 pass
 
 
+def analyze_text_via_gemini(text_prompt, model_name, client):
+    """Send a plain text prompt to Gemini (used for website content)."""
+    try:
+        with st.spinner(f"Analyzing with {model_name}..."):
+            result = client.models.generate_content(
+                model=model_name,
+                contents=[types.Part.from_text(text=text_prompt)],
+            )
+        return result.text
+    except Exception as e:
+        st.error(f"Error during Gemini analysis: {str(e)}")
+        import traceback
+        st.error(traceback.format_exc())
+        return None
+
+
+def render_specifications(specs_json):
+    """Render parsed specifications JSON in a structured Streamlit layout."""
+
+    project = specs_json.get("project", {})
+    unit_configs = specs_json.get("unit_configurations", [])
+    construction = specs_json.get("construction_specs", {})
+    common = specs_json.get("common_area_specs", {})
+
+    if project:
+        st.markdown("### 🏗️ Project Details")
+        cols = st.columns(2)
+        for i, (k, v) in enumerate(project.items()):
+            with cols[i % 2]:
+                st.markdown(f"**{k}**")
+                st.write(v)
+        st.divider()
+
+    if unit_configs:
+        st.markdown("### 🏠 Unit Configurations")
+        config_labels = [c.get("type", f"Config {i+1}") for i, c in enumerate(unit_configs)]
+        tabs = st.tabs(config_labels)
+        field_map = {
+            "super_builtup_area": "Super Built-up Area",
+            "carpet_area": "Carpet Area",
+            "builtup_area": "Built-up Area",
+            "num_units": "Number of Units",
+            "floor_range": "Floor Range",
+            "price_range": "Price Range",
+        }
+        for tab, config in zip(tabs, unit_configs):
+            with tab:
+                cols = st.columns(2)
+                entries = [(field_map.get(k, k.replace("_", " ").title()), v)
+                           for k, v in config.items() if k != "type" and v]
+                for i, (label, val) in enumerate(entries):
+                    with cols[i % 2]:
+                        st.markdown(f"**{label}**")
+                        st.write(val)
+        st.divider()
+
+    if construction:
+        st.markdown("### 🧱 Construction Specifications")
+        cols = st.columns(2)
+        for i, (k, v) in enumerate(construction.items()):
+            with cols[i % 2]:
+                st.markdown(f"**{k}**")
+                st.write(v)
+        st.divider()
+
+    if common:
+        st.markdown("### 🏢 Common Area Specifications")
+        cols = st.columns(2)
+        for i, (k, v) in enumerate(common.items()):
+            with cols[i % 2]:
+                st.markdown(f"**{k}**")
+                st.write(v)
+
+
 # ── UI ─────────────────────────────────────────────────────────────────────────
 
-st.write("Upload Brochure or Enter URL and (Optionally) Enter Old USPs")
+st.write("Upload Brochure, Enter Brochure URL, or Enter Project Website Link — then optionally add Old USPs")
 
 # Model selection
 st.subheader("Select Gemini Model")
@@ -349,41 +829,74 @@ selected_model_name = st.selectbox(
 )
 selected_model = model_options[selected_model_name]
 
-# File / URL inputs
-uploaded_file = st.file_uploader("Upload a brochure file", type=["pdf"])
-st.write("OR")
-pdf_url = st.text_input("Enter URL to PDF brochure", placeholder="https://example.com/brochure.pdf")
+# ── Input sources ──────────────────────────────────────────────────────────────
+st.subheader("Input Source")
+
+col_upload, col_pdfurl, col_weburl = st.columns(3)
+
+with col_upload:
+    st.markdown("**📄 Upload Brochure PDF**")
+    uploaded_file = st.file_uploader("Upload a brochure file", type=["pdf"], label_visibility="collapsed")
+
+with col_pdfurl:
+    st.markdown("**🔗 Brochure PDF URL**")
+    pdf_url = st.text_input(
+        "Enter URL to PDF brochure",
+        placeholder="https://example.com/brochure.pdf",
+        label_visibility="collapsed",
+    )
+
+with col_weburl:
+    st.markdown("**🌐 Project Website URL**")
+    website_url = st.text_input(
+        "Enter project website link",
+        placeholder="https://projectname.com",
+        label_visibility="collapsed",
+    )
 
 # Old USPs
 st.subheader("Enter Old USPs (Optional)")
 old_usps = st.text_area("Paste previous USPs here", height=200)
 
-# ── Resolve PDF source ─────────────────────────────────────────────────────────
+# ── Resolve input source ───────────────────────────────────────────────────────
 
 pdf_bytes = None
+website_content = None
 input_source = None
+input_mode = None  # "pdf" or "website"
 
 if uploaded_file is not None:
     pdf_bytes = uploaded_file.read()
     uploaded_file.seek(0)
     input_source = f"File: {uploaded_file.name}"
+    input_mode = "pdf"
 elif pdf_url and pdf_url.strip():
     pdf_bytes = download_pdf_from_url(pdf_url.strip())
     if pdf_bytes:
-        input_source = f"URL: {pdf_url}"
+        input_source = f"PDF URL: {pdf_url}"
+        input_mode = "pdf"
+elif website_url and website_url.strip():
+    input_source = f"Website: {website_url}"
+    input_mode = "website"
 
 # ── Main panels ────────────────────────────────────────────────────────────────
 
-if pdf_bytes:
+if input_mode:
     col1, col2 = st.columns([1, 1])
-
     with col1:
-        st.subheader("Uploaded Brochure")
+        st.subheader("Input Source")
         st.write(input_source)
-        st.info(f"PDF size: {len(pdf_bytes) / 1024:.1f} KB")
+        if input_mode == "pdf" and pdf_bytes:
+            st.info(f"PDF size: {len(pdf_bytes) / 1024:.1f} KB")
+        elif input_mode == "website":
+            st.info("Website content will be scraped on extraction.")
 
-    # ── Tab layout for USPs and Amenities ──────────────────────────────────────
-    tab_usp, tab_amenities = st.tabs(["📋 Extract USPs", "🏊 Extract Amenities"])
+    # ── Tab layout ─────────────────────────────────────────────────────────────
+    tab_usp, tab_amenities, tab_specs = st.tabs([
+        "📋 Extract USPs",
+        "🏊 Extract Amenities",
+        "📐 Extract Specifications",
+    ])
 
     # ── USP Tab ────────────────────────────────────────────────────────────────
     with tab_usp:
@@ -397,13 +910,27 @@ if pdf_bytes:
                 st.stop()
 
             start_time = time.time()
-            result_placeholder.info("Uploading PDF and analyzing… this may take 30–90 seconds.")
+            result_placeholder.info("Analyzing… this may take 30–90 seconds.")
+            analysis = None
 
-            full_prompt = base_prompt
-            if old_usps.strip():
-                full_prompt += old_usps_prompt.format(old_usps=old_usps)
+            if input_mode == "pdf":
+                full_prompt = base_prompt
+                if old_usps.strip():
+                    full_prompt += old_usps_prompt.format(old_usps=old_usps)
+                analysis = analyze_pdf_via_files_api(pdf_bytes, full_prompt, selected_model, client)
 
-            analysis = analyze_pdf_via_files_api(pdf_bytes, full_prompt, selected_model, client)
+            elif input_mode == "website":
+                with st.spinner("Scraping website content..."):
+                    website_content = scrape_website_content(website_url.strip())
+                if not website_content:
+                    result_placeholder.error("Failed to scrape website. Please check the URL.")
+                    st.stop()
+                st.success(f"Scraped {len(website_content):,} characters from website.")
+                prompt = website_usp_prompt.format(website_content=website_content)
+                if old_usps.strip():
+                    prompt += old_usps_prompt.format(old_usps=old_usps)
+                analysis = analyze_text_via_gemini(prompt, selected_model, client)
+
             execution_time = time.time() - start_time
 
             if analysis:
@@ -435,7 +962,7 @@ if pdf_bytes:
 
                 st.caption(
                     f"Analysis completed in {execution_time:.1f}s using {selected_model_name}. "
-                    f"PDF was uploaded to Gemini and deleted after processing."
+                    + ("PDF was uploaded to Gemini and deleted after processing." if input_mode == "pdf" else "Website content was analyzed.")
                 )
 
                 st.download_button(
@@ -463,38 +990,42 @@ if pdf_bytes:
                 st.stop()
 
             start_time = time.time()
-            amenities_placeholder.info(
-                "Uploading PDF and extracting amenities… this may take 30–90 seconds."
-            )
+            amenities_placeholder.info("Extracting amenities… this may take 30–90 seconds.")
+            raw = None
 
-            raw = analyze_pdf_via_files_api(
-                pdf_bytes, amenities_extraction_prompt, selected_model, client
-            )
+            if input_mode == "pdf":
+                raw = analyze_pdf_via_files_api(
+                    pdf_bytes, amenities_extraction_prompt, selected_model, client
+                )
+
+            elif input_mode == "website":
+                with st.spinner("Scraping website content..."):
+                    website_content = scrape_website_content(website_url.strip())
+                if not website_content:
+                    amenities_placeholder.error("Failed to scrape website. Please check the URL.")
+                    st.stop()
+                st.success(f"Scraped {len(website_content):,} characters from website.")
+                prompt = website_amenities_prompt.format(website_content=website_content)
+                raw = analyze_text_via_gemini(prompt, selected_model, client)
+
             execution_time = time.time() - start_time
 
             if raw:
                 amenities_placeholder.empty()
 
-                # Parse JSON response
                 try:
-                    # Strip any accidental markdown fences the model may add
                     clean = raw.strip().strip("```json").strip("```").strip()
                     extracted = json.loads(clean)
                 except json.JSONDecodeError:
-                    st.error(
-                        "Model returned unexpected format. Raw response shown below."
-                    )
+                    st.error("Model returned unexpected format. Raw response shown below.")
                     st.code(raw)
                     extracted = []
 
                 if extracted:
-                    st.subheader(f"Amenities Found ({len(extracted)})")
-
-                    # Validate each item against predefined list
                     valid = [a for a in extracted if a in PREDEFINED_AMENITIES]
                     invalid = [a for a in extracted if a not in PREDEFINED_AMENITIES]
 
-                    # Display in a grid-style layout (3 columns)
+                    st.subheader(f"Amenities Found ({len(valid)})")
                     cols = st.columns(3)
                     for i, amenity in enumerate(valid):
                         with cols[i % 3]:
@@ -508,19 +1039,14 @@ if pdf_bytes:
                         for item in invalid:
                             st.caption(f"  • {item}")
 
-                    st.caption(
-                        f"Extraction completed in {execution_time:.1f}s using {selected_model_name}."
-                    )
+                    st.caption(f"Extraction completed in {execution_time:.1f}s using {selected_model_name}.")
 
-                    # Download as JSON
                     st.download_button(
                         label="Download Amenities (JSON)",
                         data=json.dumps(valid, indent=2),
                         file_name="property_amenities.json",
                         mime="application/json",
                     )
-
-                    # Download as plain text (one per line)
                     st.download_button(
                         label="Download Amenities (TXT)",
                         data="\n".join(valid),
@@ -528,14 +1054,74 @@ if pdf_bytes:
                         mime="text/plain",
                     )
                 else:
-                    st.info("No matching amenities were found in this brochure.")
-                    st.caption(
-                        f"Extraction completed in {execution_time:.1f}s using {selected_model_name}."
-                    )
+                    st.info("No matching amenities were found.")
+                    st.caption(f"Extraction completed in {execution_time:.1f}s using {selected_model_name}.")
             else:
-                amenities_placeholder.error(
-                    "Failed to extract amenities. Please try again."
+                amenities_placeholder.error("Failed to extract amenities. Please try again.")
+
+    # ── Specifications Tab ─────────────────────────────────────────────────────
+    with tab_specs:
+        st.info(f"Model: {selected_model_name}")
+        st.write(
+            "Extracts structured project specs: configuration details, construction materials, "
+            "common area info, and more."
+        )
+        specs_button = st.button("Extract Specifications", key="btn_specs")
+        specs_placeholder = st.empty()
+
+        if specs_button:
+            client = setup_gemini_client()
+            if not client:
+                st.stop()
+
+            start_time = time.time()
+            specs_placeholder.info("Extracting specifications… this may take 30–90 seconds.")
+            raw = None
+
+            if input_mode == "pdf":
+                raw = analyze_pdf_via_files_api(
+                    pdf_bytes, specifications_prompt, selected_model, client
                 )
+
+            elif input_mode == "website":
+                with st.spinner("Scraping website content..."):
+                    website_content = scrape_website_content(website_url.strip())
+                if not website_content:
+                    specs_placeholder.error("Failed to scrape website. Please check the URL.")
+                    st.stop()
+                st.success(f"Scraped {len(website_content):,} characters from website.")
+                prompt = website_specifications_prompt.format(website_content=website_content)
+                raw = analyze_text_via_gemini(prompt, selected_model, client)
+
+            execution_time = time.time() - start_time
+
+            if raw:
+                specs_placeholder.empty()
+
+                try:
+                    clean = raw.strip().strip("```json").strip("```").strip()
+                    specs_data = json.loads(clean)
+                except json.JSONDecodeError:
+                    st.error("Model returned unexpected format. Raw response shown below.")
+                    st.code(raw)
+                    specs_data = None
+
+                if specs_data:
+                    render_specifications(specs_data)
+
+                    st.caption(f"Extraction completed in {execution_time:.1f}s using {selected_model_name}.")
+
+                    st.download_button(
+                        label="Download Specifications (JSON)",
+                        data=json.dumps(specs_data, indent=2),
+                        file_name="property_specifications.json",
+                        mime="application/json",
+                    )
+                else:
+                    st.info("No specifications could be extracted.")
+                    st.caption(f"Extraction completed in {execution_time:.1f}s using {selected_model_name}.")
+            else:
+                specs_placeholder.error("Failed to extract specifications. Please try again.")
 
 # Footer
 st.divider()
