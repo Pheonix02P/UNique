@@ -6,6 +6,13 @@ from google.genai import types
 import time
 import requests
 import json
+import zipfile
+import io
+try:
+    import fitz  # PyMuPDF
+    PYMUPDF_AVAILABLE = True
+except ImportError:
+    PYMUPDF_AVAILABLE = False
 
 # Page configuration
 st.set_page_config(page_title="Premium Property USP Analyzer", layout="wide")
@@ -483,7 +490,66 @@ def apply_sentence_case(specs_data: list) -> list:
     return result
 
 
-def render_specifications(specs_data):
+def extract_images_from_pdf(pdf_bytes, min_width=200, min_height=200):
+    """
+    Extract images from a PDF using PyMuPDF.
+    Returns a list of dicts: {name, data (bytes), ext, width, height, page}
+    Filters out tiny images (icons, bullets) using min_width/min_height.
+    """
+    images = []
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+
+    for page_num in range(len(doc)):
+        page = doc[page_num]
+        img_list = page.get_images(full=True)
+
+        for img_index, img_info in enumerate(img_list):
+            xref = img_info[0]
+            try:
+                base_image = doc.extract_image(xref)
+                width = base_image["width"]
+                height = base_image["height"]
+
+                # Skip tiny images (icons, watermarks, decorative elements)
+                if width < min_width or height < min_height:
+                    continue
+
+                ext = base_image["ext"]
+                img_bytes = base_image["image"]
+
+                # Convert CMYK or other color spaces to RGB via pixmap
+                if base_image.get("colorspace", 0) not in (1, 3):  # not Gray or RGB
+                    pix = fitz.Pixmap(doc, xref)
+                    if pix.n > 4:
+                        pix = fitz.Pixmap(fitz.csRGB, pix)
+                    img_bytes = pix.tobytes("png")
+                    ext = "png"
+
+                images.append({
+                    "name": f"page{page_num + 1}_img{img_index + 1}.{ext}",
+                    "data": img_bytes,
+                    "ext": ext,
+                    "width": width,
+                    "height": height,
+                    "page": page_num + 1,
+                })
+            except Exception:
+                continue
+
+    doc.close()
+    # Deduplicate by xref — same image embedded on multiple pages appears once
+    seen = set()
+    unique = []
+    for img in images:
+        key = (img["width"], img["height"], img["data"][:64])
+        if key not in seen:
+            seen.add(key)
+            unique.append(img)
+
+    return unique
+
+
+
     """Render a flat list of {label, description} spec items."""
     if not specs_data:
         st.info("No specifications could be extracted.")
@@ -578,10 +644,11 @@ if input_mode:
             st.info("Website content will be scraped on extraction.")
 
     # ── Tab layout ─────────────────────────────────────────────────────────────
-    tab_usp, tab_amenities, tab_specs = st.tabs([
+    tab_usp, tab_amenities, tab_specs, tab_images = st.tabs([
         "📋 Extract USPs",
         "🏊 Extract Amenities",
         "📐 Extract Specifications",
+        "🖼️ Extract Images",
     ])
 
     # ── USP Tab ────────────────────────────────────────────────────────────────
@@ -806,6 +873,81 @@ if input_mode:
                     st.caption(f"Extraction completed in {execution_time:.1f}s using {selected_model_name}.")
             else:
                 specs_placeholder.error("Failed to extract specifications. Please try again.")
+
+    # ── Images Tab ─────────────────────────────────────────────────────────────
+    with tab_images:
+        if input_mode == "website":
+            st.warning("Image extraction is only available for PDF input (uploaded file or PDF URL). Please provide a brochure PDF.")
+        elif not PYMUPDF_AVAILABLE:
+            st.error("PyMuPDF is not installed. Add `pymupdf` to your requirements.txt to enable image extraction.")
+        else:
+            st.write("Extracts all images from the brochure PDF. Tiny icons and decorative elements are filtered out automatically.")
+
+            col_minw, col_minh = st.columns(2)
+            with col_minw:
+                min_width = st.slider("Minimum image width (px)", 50, 500, 200, step=50)
+            with col_minh:
+                min_height = st.slider("Minimum image height (px)", 50, 500, 200, step=50)
+
+            images_button = st.button("Extract Images", key="btn_images")
+            images_placeholder = st.empty()
+
+            if images_button:
+                start_time = time.time()
+                images_placeholder.info("Extracting images from PDF…")
+
+                try:
+                    extracted_images = extract_images_from_pdf(pdf_bytes, min_width=min_width, min_height=min_height)
+                    execution_time = time.time() - start_time
+                    images_placeholder.empty()
+
+                    if extracted_images:
+                        st.subheader(f"Images Found ({len(extracted_images)})")
+
+                        # Display in a 3-column grid
+                        cols = st.columns(3)
+                        for i, img in enumerate(extracted_images):
+                            with cols[i % 3]:
+                                mime = "image/png" if img["ext"] == "png" else f"image/{img['ext']}"
+                                st.image(
+                                    img["data"],
+                                    caption=f"Page {img['page']} — {img['width']}×{img['height']}px",
+                                    use_container_width=True,
+                                )
+                                st.download_button(
+                                    label="⬇ Download",
+                                    data=img["data"],
+                                    file_name=img["name"],
+                                    mime=mime,
+                                    key=f"dl_img_{i}",
+                                )
+
+                        st.divider()
+
+                        # Zip download for all images
+                        zip_buffer = io.BytesIO()
+                        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                            for img in extracted_images:
+                                zf.writestr(img["name"], img["data"])
+                        zip_buffer.seek(0)
+
+                        st.download_button(
+                            label=f"⬇ Download All Images as ZIP ({len(extracted_images)} files)",
+                            data=zip_buffer,
+                            file_name="brochure_images.zip",
+                            mime="application/zip",
+                        )
+
+                        st.caption(f"Extraction completed in {execution_time:.1f}s.")
+                    else:
+                        images_placeholder.info(
+                            f"No images found meeting the minimum size ({min_width}×{min_height}px). "
+                            "Try lowering the size thresholds."
+                        )
+                except Exception as e:
+                    images_placeholder.error(f"Error extracting images: {str(e)}")
+                    import traceback
+                    st.error(traceback.format_exc())
 
 # Footer
 st.divider()
