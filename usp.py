@@ -490,14 +490,79 @@ def apply_sentence_case(specs_data: list) -> list:
     return result
 
 
+def _is_blank_or_mask(img_bytes: bytes, ext: str, blank_threshold: float = 0.97) -> bool:
+    """
+    Return True if the image should be discarded because it is:
+    - A near-solid colour fill (background rectangle, blank page)
+    - A black-and-white alpha mask / clipping path image
+    Uses only stdlib + PyMuPDF (no Pillow dependency at runtime).
+    """
+    try:
+        from PIL import Image as PILImage
+        import io as _io
+
+        pil_img = PILImage.open(_io.BytesIO(img_bytes)).convert("RGB")
+        pixels = list(pil_img.getdata())
+        total = len(pixels)
+        if total == 0:
+            return True
+
+        # ── 1. Near-solid colour check ──────────────────────────────────────
+        # Count how many pixels are within ±10 of the most common pixel
+        from collections import Counter
+        # Sample every 8th pixel for speed on large images
+        sample = pixels[::8]
+        if not sample:
+            return True
+        most_common_colour, _ = Counter(sample).most_common(1)[0]
+        close = sum(
+            1 for p in sample
+            if abs(p[0] - most_common_colour[0]) <= 10
+            and abs(p[1] - most_common_colour[1]) <= 10
+            and abs(p[2] - most_common_colour[2]) <= 10
+        )
+        if close / len(sample) >= blank_threshold:
+            return True
+
+        # ── 2. B&W mask check ───────────────────────────────────────────────
+        # Masks are almost entirely pure black (0,0,0) + pure white (255,255,255)
+        bw_count = sum(
+            1 for p in sample
+            if (p[0] < 10 and p[1] < 10 and p[2] < 10)      # near-black
+            or (p[0] > 245 and p[1] > 245 and p[2] > 245)    # near-white
+        )
+        if bw_count / len(sample) >= 0.97:
+            return True
+
+        return False
+
+    except Exception:
+        # If Pillow not available or any error, don't filter
+        return False
+
+
 def extract_images_from_pdf(pdf_bytes, min_width=200, min_height=200):
     """
-    Extract images from a PDF using PyMuPDF.
-    Returns a list of dicts: {name, data (bytes), ext, width, height, page}
-    Filters out tiny images (icons, bullets) using min_width/min_height.
+    Extract meaningful images from a PDF using PyMuPDF.
+    Filters out:
+      - Images smaller than min_width × min_height
+      - Mask / clipping images (smask)
+      - Near-solid colour fills (page backgrounds, colour blocks)
+      - Black-and-white alpha masks
+      - Exact duplicates (same xref content)
     """
-    images = []
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+
+    # Collect all smask xrefs so we can skip them
+    smask_xrefs = set()
+    for page in doc:
+        for img_info in page.get_images(full=True):
+            smask = img_info[8]  # index 8 = smask xref (0 if none)
+            if smask:
+                smask_xrefs.add(smask)
+
+    seen_xrefs = set()   # deduplicate by xref
+    images = []
 
     for page_num in range(len(doc)):
         page = doc[page_num]
@@ -505,51 +570,54 @@ def extract_images_from_pdf(pdf_bytes, min_width=200, min_height=200):
 
         for img_index, img_info in enumerate(img_list):
             xref = img_info[0]
+
+            # Skip masks and already-processed xrefs
+            if xref in smask_xrefs or xref in seen_xrefs:
+                continue
+            seen_xrefs.add(xref)
+
             try:
                 base_image = doc.extract_image(xref)
-                width = base_image["width"]
+                width  = base_image["width"]
                 height = base_image["height"]
 
-                # Skip tiny images (icons, watermarks, decorative elements)
+                # Size filter
                 if width < min_width or height < min_height:
                     continue
 
-                ext = base_image["ext"]
+                ext       = base_image["ext"]
                 img_bytes = base_image["image"]
 
-                # Convert CMYK or other color spaces to RGB via pixmap
-                if base_image.get("colorspace", 0) not in (1, 3):  # not Gray or RGB
+                # Convert exotic colour spaces (CMYK etc.) to RGB PNG
+                cs = base_image.get("colorspace", 3)
+                if cs not in (1, 3):
                     pix = fitz.Pixmap(doc, xref)
                     if pix.n > 4:
                         pix = fitz.Pixmap(fitz.csRGB, pix)
                     img_bytes = pix.tobytes("png")
                     ext = "png"
 
+                # Content quality filter — skip blanks and masks
+                if _is_blank_or_mask(img_bytes, ext):
+                    continue
+
                 images.append({
-                    "name": f"page{page_num + 1}_img{img_index + 1}.{ext}",
-                    "data": img_bytes,
-                    "ext": ext,
-                    "width": width,
+                    "name":   f"page{page_num + 1}_img{img_index + 1}.{ext}",
+                    "data":   img_bytes,
+                    "ext":    ext,
+                    "width":  width,
                     "height": height,
-                    "page": page_num + 1,
+                    "page":   page_num + 1,
                 })
+
             except Exception:
                 continue
 
     doc.close()
-    # Deduplicate by xref — same image embedded on multiple pages appears once
-    seen = set()
-    unique = []
-    for img in images:
-        key = (img["width"], img["height"], img["data"][:64])
-        if key not in seen:
-            seen.add(key)
-            unique.append(img)
-
-    return unique
+    return images
 
 
-
+def render_specifications(specs_data):
     """Render a flat list of {label, description} spec items."""
     if not specs_data:
         st.info("No specifications could be extracted.")
