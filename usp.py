@@ -159,6 +159,7 @@ QUALITY RULES:
 • If a spec is not mentioned, skip it — do NOT write "Not mentioned" or "N/A".
 • The label should be a short, clean heading (e.g. "Structure", "Main Door", "Flooring").
 • The description should be a single continuous paragraph capturing ALL detail for that item.
+• SENTENCE CASE: Write every description in proper sentence case — first word capitalised, rest lowercase except for brand names, acronyms, and proper nouns (e.g. "Asian Paints", "RCC", "UPVC", "ISI", "BIS", "OHT").
 
 ═══════════════════════════════════════════
 OUTPUT FORMAT — strict JSON only:
@@ -400,6 +401,86 @@ def analyze_pdf_via_files_api(pdf_bytes, prompt, model_name, client):
                 os.remove(tmp_path)
             except Exception:
                 pass
+
+
+import re
+
+# Words/patterns that must stay uppercase regardless of position
+_PRESERVE_UPPER = {
+    "RCC", "PVC", "UPVC", "GI", "MS", "SS", "ISI", "BIS", "OHT", "STP", "WTP",
+    "ETP", "MLD", "KVA", "KW", "AC", "DC", "MCB", "ELCB", "RCCB", "DB",
+    "CCTV", "DTH", "RO", "UV", "TV", "LED", "CFL", "AHU", "VRF", "VRV",
+    "RERA", "OC", "CC", "NOC", "BHK", "FSI", "FAR", "TDR",
+    "CP", "WPC", "HDF", "MDF", "BWR", "BWP",
+}
+
+def _sentence_case(text: str) -> str:
+    """
+    Convert text to sentence case while preserving:
+    - Known uppercase acronyms/abbreviations
+    - Brand names (words that start with a capital followed by lowercase)
+    - Sub-labels like "Internal:", "External:" (capitalised at sentence start)
+    - Measurements, grades, and slash-separated alternatives (e.g. RAK/Cera/Johnson)
+    """
+    if not text:
+        return text
+
+    def fix_sentence(sentence: str) -> str:
+        sentence = sentence.strip()
+        if not sentence:
+            return sentence
+        words = sentence.split()
+        result = []
+        for i, word in enumerate(words):
+            # Strip trailing punctuation for checking, restore after
+            stripped = word.rstrip(".,;:\"')")
+            leading = word[: len(word) - len(word.lstrip("(\"'"))]
+            trailing = word[len(leading) + len(stripped):]
+
+            # Handle slash-separated tokens (e.g. RAK/Cera/Johnson)
+            if "/" in stripped:
+                parts = stripped.split("/")
+                fixed_parts = []
+                for p in parts:
+                    p_upper = p.upper()
+                    if p_upper in _PRESERVE_UPPER:
+                        fixed_parts.append(p_upper)
+                    elif p and p[0].isupper():
+                        # Treat as brand name — keep capitalisation
+                        fixed_parts.append(p)
+                    else:
+                        fixed_parts.append(p.lower())
+                result.append(leading + "/".join(fixed_parts) + trailing)
+                continue
+
+            upper_stripped = stripped.upper()
+            if upper_stripped in _PRESERVE_UPPER:
+                result.append(leading + upper_stripped + trailing)
+            elif i == 0:
+                # First word of sentence: capitalise first letter only
+                result.append(leading + stripped[:1].upper() + stripped[1:].lower() + trailing)
+            elif stripped and stripped[0].isupper() and len(stripped) > 1 and stripped[1].islower():
+                # Looks like a brand name — preserve as-is
+                result.append(word)
+            else:
+                result.append(leading + stripped.lower() + trailing)
+
+        return " ".join(result)
+
+    # Split on sentence boundaries (. ! ?) keeping the delimiter
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    return "  ".join(fix_sentence(s) for s in sentences)
+
+
+def apply_sentence_case(specs_data: list) -> list:
+    """Apply sentence case to all description fields in the specs list."""
+    result = []
+    for item in specs_data:
+        result.append({
+            "label": item.get("label", "").strip(),
+            "description": _sentence_case(item.get("description", "").strip()),
+        })
+    return result
 
 
 def render_specifications(specs_data):
@@ -692,6 +773,7 @@ if input_mode:
                     specs_data = None
 
                 if specs_data:
+                    specs_data = apply_sentence_case(specs_data)
                     st.subheader(f"Specifications ({len(specs_data)} items)")
                     render_specifications(specs_data)
 
