@@ -4,7 +4,6 @@ import tempfile
 from google import genai
 from google.genai import types
 import time
-import io
 import requests
 import json
 
@@ -139,209 +138,56 @@ OLD USPs:
 Merge insights from both sources: remove duplicates, keep the most compelling and unique points from each. Apply the same formatting, character limit, and quality rules to all final USPs.
 """
 
-specifications_prompt = """You are a real estate data extraction specialist. You have been provided a brochure/document for a premium residential project.
-
-Your task is to extract all available project and unit specifications in a structured format.
+specifications_prompt = """You are a real estate data extraction specialist. Extract all construction and material specifications from the provided document/source.
 
 ═══════════════════════════════════════════
-EXTRACTION SCOPE — extract ALL of the following if present:
+WHAT TO EXTRACT:
 ═══════════════════════════════════════════
-
-PROJECT-LEVEL SPECIFICATIONS:
-- Project Name
-- Developer / Builder Name
-- Location / Address
-- Total Land Area (in acres/sq ft)
-- Total Number of Towers / Blocks
-- Total Number of Units / Apartments
-- Number of Floors per Tower
-- Total Number of Basements
-- Total Parking Spaces
-- Project Status (Under Construction / Ready to Move / Upcoming)
-- Possession Date / Expected Completion
-- RERA Registration Number(s)
-- Launch Date
-- Total Open Space %
-- FAR / FSI
-- Plot Area
-
-UNIT CONFIGURATIONS:
-- BHK Types available (e.g. 2 BHK, 3 BHK, 4 BHK, Penthouse)
-- Super Built-up Area range per configuration (in sq ft)
-- Carpet Area range per configuration (in sq ft)
-- Built-up Area range per configuration (if available)
-- Number of units per configuration
-- Floor range per configuration (e.g. floors 5–20)
-- Price range per configuration (if mentioned)
-
-CONSTRUCTION SPECIFICATIONS:
-- Structure type (RCC / Steel / etc.)
-- External wall material
-- Internal wall material
-- Flooring (living, bedroom, kitchen, bathroom)
-- Ceiling height
-- Window type / brand
-- Door type (main door, internal doors)
-- Kitchen specifications (counter, sink, fittings)
-- Bathroom fittings brand(s)
-- Electrical fittings / load per unit
-- Plumbing / pipe material
-- Paint brand / type (internal, external)
-- Waterproofing details
-
-COMMON AREA SPECIFICATIONS:
-- Lobby type / finishing
-- Lift brand / count / capacity
-- Generator backup (full / partial, KVA)
-- Water supply source
-- Sewage treatment capacity
-- Rainwater harvesting
-- Security system details
+Extract every specification item you can find, including but not limited to:
+Structure, Super Structure, Flooring, Plastering, Painting, Electrical, Main Door,
+Internal Door, Windows, Kitchen, Toilets / Bathrooms, Water Proofing, Lift, Generator,
+CCTV Cameras, Intercom, Security, Plumbing, Terrace, Common Areas, Lobby, Staircase,
+External Façade, Compound Wall, Fire Fighting, STP / WTP, Rainwater Harvesting,
+Solar, EV Charging, Parking, Gas Pipeline — and any other spec present in the source.
 
 ═══════════════════════════════════════════
 QUALITY RULES:
 ═══════════════════════════════════════════
-• Extract ONLY data explicitly stated in the document. Do NOT infer or assume.
-• Use exact numbers, units, and brand names as written.
-• If a field is not mentioned, skip it entirely — do NOT write "Not mentioned" or "N/A".
-• Preserve original units (sq ft, sq m, acres, etc.)
+• Extract ONLY data explicitly stated in the source. Do NOT infer or assume.
+• Use exact brand names, grades, and measurements as written.
+• Preserve all sub-labels (e.g. "Internal:", "External:") within the description.
+• If a spec is not mentioned, skip it — do NOT write "Not mentioned" or "N/A".
+• The label should be a short, clean heading (e.g. "Structure", "Main Door", "Flooring").
+• The description should be a single continuous paragraph capturing ALL detail for that item.
 
 ═══════════════════════════════════════════
 OUTPUT FORMAT — strict JSON only:
 ═══════════════════════════════════════════
-Return a single valid JSON object with this structure:
+Return a JSON array where each element is an object with exactly two keys:
+  "label"       — short heading for the specification item
+  "description" — full detail as a single descriptive paragraph
 
-{
-  "project": {
-    "Field Name": "Value",
-    ...
+Example output:
+[
+  {
+    "label": "Structure",
+    "description": "Footings, columns, beams and slabs in RCC grade."
   },
-  "unit_configurations": [
-    {
-      "type": "3 BHK",
-      "super_builtup_area": "1850–2100 sq ft",
-      "carpet_area": "1350–1520 sq ft",
-      "num_units": "120",
-      "floor_range": "5–25",
-      "price_range": "₹2.5–3.2 Cr"
-    },
-    ...
-  ],
-  "construction_specs": {
-    "Field Name": "Value",
-    ...
+  {
+    "label": "Flooring",
+    "description": "Coral/RAK/Cera/Johnson or equivalent reputed make double charged vitrified tiles with 4\\" skirting."
   },
-  "common_area_specs": {
-    "Field Name": "Value",
-    ...
+  {
+    "label": "Painting",
+    "description": "Internal: Asian/JK/Latif/Equivalent reputed make with Asian easy clean weather coat exterior paints for external walls. Texture finish for elevation. External: Asian Enamel paints over two coats of enamel paint with grey luppum for internal doors and grills."
+  },
+  {
+    "label": "Main Door",
+    "description": "Best teak wood door frames and teak wood shutters aesthetically designed with fine finished melamine polishing and designer hardware of reputed make. Height of main door: 7'."
   }
-}
+]
 
-Output ONLY the JSON object. No preamble, no explanation, no markdown fences.
-"""
-
-website_specifications_prompt = """You are a real estate data extraction specialist. You have been provided the scraped text content from a premium residential project's website.
-
-WEBSITE CONTENT:
-{website_content}
-
-Your task is to extract all available project and unit specifications in a structured format.
-
-═══════════════════════════════════════════
-EXTRACTION SCOPE — extract ALL of the following if present:
-═══════════════════════════════════════════
-
-PROJECT-LEVEL SPECIFICATIONS:
-- Project Name
-- Developer / Builder Name
-- Location / Address
-- Total Land Area (in acres/sq ft)
-- Total Number of Towers / Blocks
-- Total Number of Units / Apartments
-- Number of Floors per Tower
-- Total Number of Basements
-- Total Parking Spaces
-- Project Status (Under Construction / Ready to Move / Upcoming)
-- Possession Date / Expected Completion
-- RERA Registration Number(s)
-- Launch Date
-- Total Open Space %
-- FAR / FSI
-- Plot Area
-
-UNIT CONFIGURATIONS:
-- BHK Types available (e.g. 2 BHK, 3 BHK, 4 BHK, Penthouse)
-- Super Built-up Area range per configuration (in sq ft)
-- Carpet Area range per configuration (in sq ft)
-- Built-up Area range per configuration (if available)
-- Number of units per configuration
-- Floor range per configuration (e.g. floors 5–20)
-- Price range per configuration (if mentioned)
-
-CONSTRUCTION SPECIFICATIONS:
-- Structure type (RCC / Steel / etc.)
-- External wall material
-- Internal wall material
-- Flooring (living, bedroom, kitchen, bathroom)
-- Ceiling height
-- Window type / brand
-- Door type (main door, internal doors)
-- Kitchen specifications (counter, sink, fittings)
-- Bathroom fittings brand(s)
-- Electrical fittings / load per unit
-- Plumbing / pipe material
-- Paint brand / type (internal, external)
-- Waterproofing details
-
-COMMON AREA SPECIFICATIONS:
-- Lobby type / finishing
-- Lift brand / count / capacity
-- Generator backup (full / partial, KVA)
-- Water supply source
-- Sewage treatment capacity
-- Rainwater harvesting
-- Security system details
-
-═══════════════════════════════════════════
-QUALITY RULES:
-═══════════════════════════════════════════
-• Extract ONLY data explicitly stated in the website content. Do NOT infer or assume.
-• Use exact numbers, units, and brand names as written.
-• If a field is not mentioned, skip it entirely — do NOT write "Not mentioned" or "N/A".
-• Preserve original units (sq ft, sq m, acres, etc.)
-
-═══════════════════════════════════════════
-OUTPUT FORMAT — strict JSON only:
-═══════════════════════════════════════════
-Return a single valid JSON object with this structure:
-
-{
-  "project": {
-    "Field Name": "Value",
-    ...
-  },
-  "unit_configurations": [
-    {
-      "type": "3 BHK",
-      "super_builtup_area": "1850–2100 sq ft",
-      "carpet_area": "1350–1520 sq ft",
-      "num_units": "120",
-      "floor_range": "5–25",
-      "price_range": "₹2.5–3.2 Cr"
-    },
-    ...
-  ],
-  "construction_specs": {
-    "Field Name": "Value",
-    ...
-  },
-  "common_area_specs": {
-    "Field Name": "Value",
-    ...
-  }
-}
-
-Output ONLY the JSON object. No preamble, no explanation, no markdown fences.
+Output ONLY the JSON array. No preamble, no explanation, no markdown fences.
 """
 
 PREDEFINED_AMENITIES = [
@@ -556,62 +402,20 @@ def analyze_pdf_via_files_api(pdf_bytes, prompt, model_name, client):
                 pass
 
 
-def render_specifications(specs_json):
-    """Render parsed specifications JSON in a structured Streamlit layout."""
+def render_specifications(specs_data):
+    """Render a flat list of {label, description} spec items."""
+    if not specs_data:
+        st.info("No specifications could be extracted.")
+        return
 
-    project = specs_json.get("project", {})
-    unit_configs = specs_json.get("unit_configurations", [])
-    construction = specs_json.get("construction_specs", {})
-    common = specs_json.get("common_area_specs", {})
+    for item in specs_data:
+        label = item.get("label", "").strip()
+        description = item.get("description", "").strip()
+        if label and description:
+            st.markdown(f"**{label}**")
+            st.write(description)
+            st.divider()
 
-    if project:
-        st.markdown("### 🏗️ Project Details")
-        cols = st.columns(2)
-        for i, (k, v) in enumerate(project.items()):
-            with cols[i % 2]:
-                st.markdown(f"**{k}**")
-                st.write(v)
-        st.divider()
-
-    if unit_configs:
-        st.markdown("### 🏠 Unit Configurations")
-        config_labels = [c.get("type", f"Config {i+1}") for i, c in enumerate(unit_configs)]
-        tabs = st.tabs(config_labels)
-        field_map = {
-            "super_builtup_area": "Super Built-up Area",
-            "carpet_area": "Carpet Area",
-            "builtup_area": "Built-up Area",
-            "num_units": "Number of Units",
-            "floor_range": "Floor Range",
-            "price_range": "Price Range",
-        }
-        for tab, config in zip(tabs, unit_configs):
-            with tab:
-                cols = st.columns(2)
-                entries = [(field_map.get(k, k.replace("_", " ").title()), v)
-                           for k, v in config.items() if k != "type" and v]
-                for i, (label, val) in enumerate(entries):
-                    with cols[i % 2]:
-                        st.markdown(f"**{label}**")
-                        st.write(val)
-        st.divider()
-
-    if construction:
-        st.markdown("### 🧱 Construction Specifications")
-        cols = st.columns(2)
-        for i, (k, v) in enumerate(construction.items()):
-            with cols[i % 2]:
-                st.markdown(f"**{k}**")
-                st.write(v)
-        st.divider()
-
-    if common:
-        st.markdown("### 🏢 Common Area Specifications")
-        cols = st.columns(2)
-        for i, (k, v) in enumerate(common.items()):
-            with cols[i % 2]:
-                st.markdown(f"**{k}**")
-                st.write(v)
 
 
 # ── UI ─────────────────────────────────────────────────────────────────────────
@@ -663,7 +467,6 @@ old_usps = st.text_area("Paste previous USPs here", height=200)
 # ── Resolve input source ───────────────────────────────────────────────────────
 
 pdf_bytes = None
-website_content = None
 input_source = None
 input_mode = None  # "pdf" or "website"
 
@@ -722,16 +525,10 @@ if input_mode:
                 analysis = analyze_pdf_via_files_api(pdf_bytes, full_prompt, selected_model, client)
 
             elif input_mode == "website":
-                with st.spinner("Scraping website content..."):
-                    website_content = scrape_website_content(website_url.strip())
-                if not website_content:
-                    result_placeholder.error("Failed to scrape website. Please check the URL.")
-                    st.stop()
-                st.success(f"Scraped {len(website_content):,} characters from website.")
-                prompt = website_usp_prompt.format(website_content=website_content)
+                full_prompt = base_prompt
                 if old_usps.strip():
-                    prompt += old_usps_prompt.format(old_usps=old_usps)
-                analysis = analyze_text_via_gemini(prompt, selected_model, client)
+                    full_prompt += old_usps_prompt.format(old_usps=old_usps)
+                analysis = analyze_website_via_gemini(website_url.strip(), full_prompt, selected_model, client)
 
             execution_time = time.time() - start_time
 
@@ -801,14 +598,7 @@ if input_mode:
                 )
 
             elif input_mode == "website":
-                with st.spinner("Scraping website content..."):
-                    website_content = scrape_website_content(website_url.strip())
-                if not website_content:
-                    amenities_placeholder.error("Failed to scrape website. Please check the URL.")
-                    st.stop()
-                st.success(f"Scraped {len(website_content):,} characters from website.")
-                prompt = website_amenities_prompt.format(website_content=website_content)
-                raw = analyze_text_via_gemini(prompt, selected_model, client)
+                raw = analyze_website_via_gemini(website_url.strip(), amenities_extraction_prompt, selected_model, client)
 
             execution_time = time.time() - start_time
 
@@ -886,14 +676,7 @@ if input_mode:
                 )
 
             elif input_mode == "website":
-                with st.spinner("Scraping website content..."):
-                    website_content = scrape_website_content(website_url.strip())
-                if not website_content:
-                    specs_placeholder.error("Failed to scrape website. Please check the URL.")
-                    st.stop()
-                st.success(f"Scraped {len(website_content):,} characters from website.")
-                prompt = website_specifications_prompt.format(website_content=website_content)
-                raw = analyze_text_via_gemini(prompt, selected_model, client)
+                raw = analyze_website_via_gemini(website_url.strip(), specifications_prompt, selected_model, client)
 
             execution_time = time.time() - start_time
 
@@ -909,16 +692,33 @@ if input_mode:
                     specs_data = None
 
                 if specs_data:
+                    st.subheader(f"Specifications ({len(specs_data)} items)")
                     render_specifications(specs_data)
 
                     st.caption(f"Extraction completed in {execution_time:.1f}s using {selected_model_name}.")
 
-                    st.download_button(
-                        label="Download Specifications (JSON)",
-                        data=json.dumps(specs_data, indent=2),
-                        file_name="property_specifications.json",
-                        mime="application/json",
+                    # Plain text version: "Label\nDescription\n\n"
+                    txt_output = "\n\n".join(
+                        f"{item['label']}\n{item['description']}"
+                        for item in specs_data
+                        if item.get("label") and item.get("description")
                     )
+
+                    col_dl1, col_dl2 = st.columns(2)
+                    with col_dl1:
+                        st.download_button(
+                            label="Download Specifications (JSON)",
+                            data=json.dumps(specs_data, indent=2),
+                            file_name="property_specifications.json",
+                            mime="application/json",
+                        )
+                    with col_dl2:
+                        st.download_button(
+                            label="Download Specifications (TXT)",
+                            data=txt_output,
+                            file_name="property_specifications.txt",
+                            mime="text/plain",
+                        )
                 else:
                     st.info("No specifications could be extracted.")
                     st.caption(f"Extraction completed in {execution_time:.1f}s using {selected_model_name}.")
