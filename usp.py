@@ -640,7 +640,7 @@ st.write("Upload Brochure, Enter Brochure URL, or Enter Project Website Link —
 # Model selection
 st.subheader("Select Gemini Model")
 model_options = {
-    "Gemini 3.1 flash": "gemini-3-flash-preview",
+    "Gemini 3.1 flash": "gemini-3.1-flash-lite-preview",
     "Gemini 2.5 flash": "gemini-2.5-flash",
 }
 selected_model_name = st.selectbox(
