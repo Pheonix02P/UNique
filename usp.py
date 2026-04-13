@@ -8,6 +8,11 @@ import requests
 import json
 import zipfile
 import io
+
+# ✅ Persist images across reruns
+if "extracted_images" not in st.session_state:
+    st.session_state.extracted_images = None
+
 try:
     import fitz  # PyMuPDF
     PYMUPDF_AVAILABLE = True
@@ -422,13 +427,6 @@ _PRESERVE_UPPER = {
 }
 
 def _sentence_case(text: str) -> str:
-    """
-    Convert text to sentence case while preserving:
-    - Known uppercase acronyms/abbreviations
-    - Brand names (words that start with a capital followed by lowercase)
-    - Sub-labels like "Internal:", "External:" (capitalised at sentence start)
-    - Measurements, grades, and slash-separated alternatives (e.g. RAK/Cera/Johnson)
-    """
     if not text:
         return text
 
@@ -439,12 +437,10 @@ def _sentence_case(text: str) -> str:
         words = sentence.split()
         result = []
         for i, word in enumerate(words):
-            # Strip trailing punctuation for checking, restore after
             stripped = word.rstrip(".,;:\"')")
             leading = word[: len(word) - len(word.lstrip("(\"'"))]
             trailing = word[len(leading) + len(stripped):]
 
-            # Handle slash-separated tokens (e.g. RAK/Cera/Johnson)
             if "/" in stripped:
                 parts = stripped.split("/")
                 fixed_parts = []
@@ -453,7 +449,6 @@ def _sentence_case(text: str) -> str:
                     if p_upper in _PRESERVE_UPPER:
                         fixed_parts.append(p_upper)
                     elif p and p[0].isupper():
-                        # Treat as brand name — keep capitalisation
                         fixed_parts.append(p)
                     else:
                         fixed_parts.append(p.lower())
@@ -464,23 +459,19 @@ def _sentence_case(text: str) -> str:
             if upper_stripped in _PRESERVE_UPPER:
                 result.append(leading + upper_stripped + trailing)
             elif i == 0:
-                # First word of sentence: capitalise first letter only
                 result.append(leading + stripped[:1].upper() + stripped[1:].lower() + trailing)
             elif stripped and stripped[0].isupper() and len(stripped) > 1 and stripped[1].islower():
-                # Looks like a brand name — preserve as-is
                 result.append(word)
             else:
                 result.append(leading + stripped.lower() + trailing)
 
         return " ".join(result)
 
-    # Split on sentence boundaries (. ! ?) keeping the delimiter
     sentences = re.split(r'(?<=[.!?])\s+', text)
     return "  ".join(fix_sentence(s) for s in sentences)
 
 
 def apply_sentence_case(specs_data: list) -> list:
-    """Apply sentence case to all description fields in the specs list."""
     result = []
     for item in specs_data:
         result.append({
@@ -491,12 +482,6 @@ def apply_sentence_case(specs_data: list) -> list:
 
 
 def _is_blank_or_mask(img_bytes: bytes, ext: str, blank_threshold: float = 0.97) -> bool:
-    """
-    Return True if the image should be discarded because it is:
-    - A near-solid colour fill (background rectangle, blank page)
-    - A black-and-white alpha mask / clipping path image
-    Uses only stdlib + PyMuPDF (no Pillow dependency at runtime).
-    """
     try:
         from PIL import Image as PILImage
         import io as _io
@@ -507,10 +492,7 @@ def _is_blank_or_mask(img_bytes: bytes, ext: str, blank_threshold: float = 0.97)
         if total == 0:
             return True
 
-        # ── 1. Near-solid colour check ──────────────────────────────────────
-        # Count how many pixels are within ±10 of the most common pixel
         from collections import Counter
-        # Sample every 8th pixel for speed on large images
         sample = pixels[::8]
         if not sample:
             return True
@@ -524,12 +506,10 @@ def _is_blank_or_mask(img_bytes: bytes, ext: str, blank_threshold: float = 0.97)
         if close / len(sample) >= blank_threshold:
             return True
 
-        # ── 2. B&W mask check ───────────────────────────────────────────────
-        # Masks are almost entirely pure black (0,0,0) + pure white (255,255,255)
         bw_count = sum(
             1 for p in sample
-            if (p[0] < 10 and p[1] < 10 and p[2] < 10)      # near-black
-            or (p[0] > 245 and p[1] > 245 and p[2] > 245)    # near-white
+            if (p[0] < 10 and p[1] < 10 and p[2] < 10)
+            or (p[0] > 245 and p[1] > 245 and p[2] > 245)
         )
         if bw_count / len(sample) >= 0.97:
             return True
@@ -537,31 +517,20 @@ def _is_blank_or_mask(img_bytes: bytes, ext: str, blank_threshold: float = 0.97)
         return False
 
     except Exception:
-        # If Pillow not available or any error, don't filter
         return False
 
 
 def extract_images_from_pdf(pdf_bytes, min_width=200, min_height=200):
-    """
-    Extract meaningful images from a PDF using PyMuPDF.
-    Filters out:
-      - Images smaller than min_width × min_height
-      - Mask / clipping images (smask)
-      - Near-solid colour fills (page backgrounds, colour blocks)
-      - Black-and-white alpha masks
-      - Exact duplicates (same xref content)
-    """
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
 
-    # Collect all smask xrefs so we can skip them
     smask_xrefs = set()
     for page in doc:
         for img_info in page.get_images(full=True):
-            smask = img_info[8]  # index 8 = smask xref (0 if none)
+            smask = img_info[8]
             if smask:
                 smask_xrefs.add(smask)
 
-    seen_xrefs = set()   # deduplicate by xref
+    seen_xrefs = set()
     images = []
 
     for page_num in range(len(doc)):
@@ -571,7 +540,6 @@ def extract_images_from_pdf(pdf_bytes, min_width=200, min_height=200):
         for img_index, img_info in enumerate(img_list):
             xref = img_info[0]
 
-            # Skip masks and already-processed xrefs
             if xref in smask_xrefs or xref in seen_xrefs:
                 continue
             seen_xrefs.add(xref)
@@ -581,14 +549,12 @@ def extract_images_from_pdf(pdf_bytes, min_width=200, min_height=200):
                 width  = base_image["width"]
                 height = base_image["height"]
 
-                # Size filter
                 if width < min_width or height < min_height:
                     continue
 
                 ext       = base_image["ext"]
                 img_bytes = base_image["image"]
 
-                # Convert exotic colour spaces (CMYK etc.) to RGB PNG
                 cs = base_image.get("colorspace", 3)
                 if cs not in (1, 3):
                     pix = fitz.Pixmap(doc, xref)
@@ -597,7 +563,6 @@ def extract_images_from_pdf(pdf_bytes, min_width=200, min_height=200):
                     img_bytes = pix.tobytes("png")
                     ext = "png"
 
-                # Content quality filter — skip blanks and masks
                 if _is_blank_or_mask(img_bytes, ext):
                     continue
 
@@ -618,7 +583,6 @@ def extract_images_from_pdf(pdf_bytes, min_width=200, min_height=200):
 
 
 def render_specifications(specs_data):
-    """Render a flat list of {label, description} spec items."""
     if not specs_data:
         st.info("No specifications could be extracted.")
         return
@@ -630,7 +594,6 @@ def render_specifications(specs_data):
             st.markdown(f"**{label}**")
             st.write(description)
             st.divider()
-
 
 
 # ── UI ─────────────────────────────────────────────────────────────────────────
@@ -914,7 +877,6 @@ if input_mode:
 
                     st.caption(f"Extraction completed in {execution_time:.1f}s using {selected_model_name}.")
 
-                    # Plain text version: "Label\nDescription\n\n"
                     txt_output = "\n\n".join(
                         f"{item['label']}\n{item['description']}"
                         for item in specs_data
@@ -960,62 +922,72 @@ if input_mode:
             images_button = st.button("Extract Images", key="btn_images")
             images_placeholder = st.empty()
 
+            # ✅ Run extraction and save to session state
             if images_button:
                 start_time = time.time()
                 images_placeholder.info("Extracting images from PDF…")
 
                 try:
-                    extracted_images = extract_images_from_pdf(pdf_bytes, min_width=min_width, min_height=min_height)
+                    st.session_state.extracted_images = extract_images_from_pdf(
+                        pdf_bytes, min_width=min_width, min_height=min_height
+                    )
                     execution_time = time.time() - start_time
                     images_placeholder.empty()
+                    st.session_state["images_execution_time"] = execution_time
 
-                    if extracted_images:
-                        st.subheader(f"Images Found ({len(extracted_images)})")
-
-                        # Display in a 3-column grid
-                        cols = st.columns(3)
-                        for i, img in enumerate(extracted_images):
-                            with cols[i % 3]:
-                                mime = "image/png" if img["ext"] == "png" else f"image/{img['ext']}"
-                                st.image(
-                                    img["data"],
-                                    caption=f"Page {img['page']} — {img['width']}×{img['height']}px",
-                                    use_container_width=True,
-                                )
-                                st.download_button(
-                                    label="⬇ Download",
-                                    data=img["data"],
-                                    file_name=img["name"],
-                                    mime=mime,
-                                    key=f"dl_img_{i}",
-                                )
-
-                        st.divider()
-
-                        # Zip download for all images
-                        zip_buffer = io.BytesIO()
-                        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                            for img in extracted_images:
-                                zf.writestr(img["name"], img["data"])
-                        zip_buffer.seek(0)
-
-                        st.download_button(
-                            label=f"⬇ Download All Images as ZIP ({len(extracted_images)} files)",
-                            data=zip_buffer,
-                            file_name="brochure_images.zip",
-                            mime="application/zip",
-                        )
-
-                        st.caption(f"Extraction completed in {execution_time:.1f}s.")
-                    else:
-                        images_placeholder.info(
-                            f"No images found meeting the minimum size ({min_width}×{min_height}px). "
-                            "Try lowering the size thresholds."
-                        )
                 except Exception as e:
                     images_placeholder.error(f"Error extracting images: {str(e)}")
                     import traceback
                     st.error(traceback.format_exc())
+                    st.session_state.extracted_images = None
+
+            # ✅ Render from session state — persists across reruns triggered by download clicks
+            if st.session_state.extracted_images:
+                extracted_images = st.session_state.extracted_images
+                execution_time = st.session_state.get("images_execution_time", 0)
+
+                st.subheader(f"Images Found ({len(extracted_images)})")
+
+                cols = st.columns(3)
+                for i, img in enumerate(extracted_images):
+                    with cols[i % 3]:
+                        mime = "image/png" if img["ext"] == "png" else f"image/{img['ext']}"
+                        st.image(
+                            img["data"],
+                            caption=f"Page {img['page']} — {img['width']}×{img['height']}px",
+                            use_container_width=True,
+                        )
+                        st.download_button(
+                            label="⬇ Download",
+                            data=img["data"],
+                            file_name=img["name"],
+                            mime=mime,
+                            key=f"dl_img_{i}",
+                        )
+
+                st.divider()
+
+                # Zip download for all images
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for img in extracted_images:
+                        zf.writestr(img["name"], img["data"])
+                zip_buffer.seek(0)
+
+                st.download_button(
+                    label=f"⬇ Download All Images as ZIP ({len(extracted_images)} files)",
+                    data=zip_buffer,
+                    file_name="brochure_images.zip",
+                    mime="application/zip",
+                )
+
+                st.caption(f"Extraction completed in {execution_time:.1f}s.")
+
+            elif st.session_state.extracted_images is not None and len(st.session_state.extracted_images) == 0:
+                st.info(
+                    f"No images found meeting the minimum size. "
+                    "Try lowering the size thresholds."
+                )
 
 # Footer
 st.divider()
